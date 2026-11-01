@@ -1,6 +1,6 @@
 # Kết quả kiểm thử bản cục bộ
 
-Ngày 01/11/2026, trên máy Windows của phiên phát triển. Đây là kết quả cho bản thử nghiệm một người dùng, không phải chứng nhận production hoặc đánh giá độ chính xác toàn quốc.
+Ngày 01–02/11/2026, trên máy Windows của phiên phát triển. Đây là kết quả cho bản thử nghiệm một người dùng, không phải chứng nhận production hoặc đánh giá độ chính xác toàn quốc.
 
 - `cargo test --workspace --locked --offline`: 38 test đạt; gồm ranh giới host/origin, hủy và nhập liệu nguyên tử, ngân sách, nguồn theo từng tác vụ, ngày quá khứ, review chủ thể, sửa báo cáo và kiểm hash.
 - `cargo clippy --workspace --all-targets --locked --offline -- -D warnings`: đạt. Script smoke kiểm tám màn hình, asset/PWA, header, request khác origin, WAV không hợp lệ và điều kiện xuất báo cáo; không gọi dịch vụ trả phí.
