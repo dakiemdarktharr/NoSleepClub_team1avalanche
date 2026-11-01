@@ -1,0 +1,313 @@
+TY  - GEN
+TI  - FinSearchComp: Towards a Realistic, Expert-Level Evaluation of Financial Search and Reasoning
+AU  - Hu, Liang
+AU  - Jiao, Jianpeng
+AU  - Liu, Jiashuo
+AU  - Ren, Yanle
+AU  - Wen, Zhoufutu
+AU  - Zhang, Kaiyuan
+AU  - Zhang, Xuanliang
+AU  - Gao, Xiang
+AU  - He, Tianci
+AU  - Hu, Fei
+AU  - Liao, Yali
+AU  - Wang, Zaiyuan
+AU  - Yang, Chenghao
+AU  - Yang, Qianyu
+AU  - Yin, Mingren
+AU  - Zeng, Zhiyuan
+AU  - Zhang, Ge
+AU  - Zhang, Xinyi
+AU  - Zhao, Xiying
+AU  - Zhu, Zhenwei
+AU  - Namkoong, Hongseok
+AU  - Huang, Wenhao
+AU  - Tang, Yuwen
+PY  - 2025
+DO  - 10.48550/arXiv.2509.13160
+UR  - https://arxiv.org/abs/2509.13160
+N1  - Author list verified against arXiv or publisher metadata. See academic-evidence.md for source status and version.
+ER  - 
+
+TY  - GEN
+TI  - FinanceBench: A New Benchmark for Financial Question Answering
+AU  - Islam, Pranab
+AU  - Kannappan, Anand
+AU  - Kiela, Douwe
+AU  - Qian, Rebecca
+AU  - Scherrer, Nino
+AU  - Vidgen, Bertie
+PY  - 2023
+DO  - 10.48550/arXiv.2311.11944
+UR  - https://arxiv.org/abs/2311.11944
+N1  - Author list verified against arXiv or publisher metadata. See academic-evidence.md for source status and version.
+ER  - 
+
+TY  - CONF
+TI  - Hierarchical Retrieval with Evidence Curation for Open-Domain Financial Question Answering on Standardized Documents
+AU  - Choe, Jaeyoung
+AU  - Kim, Jihoon
+AU  - Jung, Woohwan
+PY  - 2025
+DO  - 10.18653/v1/2025.findings-acl.855
+UR  - https://aclanthology.org/2025.findings-acl.855/
+N1  - Author list verified against arXiv or publisher metadata. See academic-evidence.md for source status and version.
+ER  - 
+
+TY  - GEN
+TI  - FinRank: An Evidence-Grounded Benchmark for Financial Question Answering and Retrieval over SEC Filings
+AU  - Mansouri, Sasan
+AU  - Saad, Daniel
+AU  - Wahrenburg, Mark
+AU  - Weissel, Manu
+AU  - Woebbeking, Fabian
+PY  - 2026
+DO  - 10.48550/arXiv.2608.07400
+UR  - https://arxiv.org/abs/2608.07400
+N1  - Author list verified against arXiv or publisher metadata. See academic-evidence.md for source status and version.
+ER  - 
+
+TY  - GEN
+TI  - ICBCBench: An Industry Consortium Benchmark for Financial Deep Research
+AU  - Li, Weiya
+AU  - Tang, Zhiwei
+AU  - He, Yizhou
+AU  - Wang, Chenghao
+AU  - Feng, Liang
+AU  - Sun, Xiao
+AU  - Liu, Dongrui
+AU  - Wen, Zichen
+AU  - Wei, Hu
+AU  - Wang, Jinghang
+AU  - Luo, Yi
+AU  - Guo, Li
+AU  - Zhang, Linfeng
+PY  - 2026
+DO  - 10.48550/arXiv.2606.17458
+UR  - https://arxiv.org/abs/2606.17458
+N1  - Author list verified against arXiv or publisher metadata. See academic-evidence.md for source status and version.
+ER  - 
+
+TY  - GEN
+TI  - FinRobot: AI Agent for Equity Research and Valuation with Large Language Models
+AU  - Zhou, Tianyu
+AU  - Wang, Pinqiao
+AU  - Wu, Yilin
+AU  - Yang, Hongyang
+PY  - 2024
+DO  - 10.48550/arXiv.2411.08804
+UR  - https://arxiv.org/abs/2411.08804
+N1  - Author list verified against arXiv or publisher metadata. See academic-evidence.md for source status and version.
+ER  - 
+
+TY  - GEN
+TI  - VietSuperSpeech: A Large-Scale Vietnamese Conversational Speech Dataset for ASR Fine-Tuning in Chatbot, Customer Support, and Call Center Applications
+AU  - Do, Loan
+AU  - Nguyen, Thanh Ngoc
+AU  - Pham, Thanh
+AU  - Do, Vinh
+AU  - Nguyen, Hien
+AU  - Nguyen, Charlotte
+PY  - 2026
+DO  - 10.48550/arXiv.2603.01894
+UR  - https://arxiv.org/abs/2603.01894
+N1  - Author list verified against arXiv or publisher metadata. See academic-evidence.md for source status and version.
+ER  - 
+
+TY  - CONF
+TI  - Vietnamese Automatic Speech Recognition: A Revisit
+AU  - Vu, Thi
+AU  - Nguyen, Linh The
+AU  - Nguyen, Dat Quoc
+PY  - 2026
+DO  - 10.18653/v1/2026.findings-eacl.345
+UR  - https://aclanthology.org/2026.findings-eacl.345/
+N1  - Author list verified against arXiv or publisher metadata. See academic-evidence.md for source status and version.
+ER  - 
+
+TY  - GEN
+TI  - FLEXI: Benchmarking Full-duplex Human-LLM Speech Interaction
+AU  - Ge, Yuan
+AU  - Chen, Saihan
+AU  - Xiao, Jingqi
+AU  - Liu, Xiaoqian
+AU  - Xiao, Tong
+AU  - Xiang, Yan
+AU  - Yu, Zhengtao
+AU  - Zhu, Jingbo
+PY  - 2025
+DO  - 10.48550/arXiv.2509.22243
+UR  - https://arxiv.org/abs/2509.22243
+N1  - Author list verified against arXiv or publisher metadata. See academic-evidence.md for source status and version.
+ER  - 
+
+TY  - GEN
+TI  - DuplexSLA: A Full-Duplex Spoken Language Model with Synchronized Speech, Language, and Action
+AU  - Zhang, Haoyang
+AU  - Chen, Jun
+AU  - Wu, Donghang
+AU  - Li, Yuxin
+AU  - Zhang, Yuxin
+AU  - Zhang, Xiangyu Tony
+AU  - Liu, Che
+AU  - Lin, Qingjian
+AU  - Peng, Yizhou
+AU  - Liu, Hexin
+AU  - Chng, Eng Siong
+AU  - Yan, Chao
+AU  - Wu, Boyong
+AU  - Huang, Yechang
+AU  - Yang, Xuerui
+AU  - Tian, Fei
+PY  - 2026
+DO  - 10.48550/arXiv.2605.20755
+UR  - https://arxiv.org/abs/2605.20755
+N1  - Author list verified against arXiv or publisher metadata. See academic-evidence.md for source status and version.
+ER  - 
+
+TY  - GEN
+TI  - When to use Graphs in RAG: A Comprehensive Analysis for Graph Retrieval-Augmented Generation
+AU  - Xiang, Zhishang
+AU  - Wu, Chuanjie
+AU  - Zhang, Qinggang
+AU  - Chen, Shengyuan
+AU  - Hong, Zijin
+AU  - Huang, Xiao
+AU  - Su, Jinsong
+PY  - 2025
+DO  - 10.48550/arXiv.2506.05690
+UR  - https://arxiv.org/abs/2506.05690
+N1  - Author list verified against arXiv or publisher metadata. See academic-evidence.md for source status and version.
+ER  - 
+
+TY  - GEN
+TI  - DyG-RAG: Dynamic Graph Retrieval-Augmented Generation with Event-Centric Reasoning
+AU  - Sun, Qingyun
+AU  - Yuan, Jiaqi
+AU  - He, Shan
+AU  - Guan, Xiao
+AU  - Yuan, Haonan
+AU  - Fu, Xingcheng
+AU  - Li, Jianxin
+AU  - Yu, Philip S.
+PY  - 2025
+DO  - 10.48550/arXiv.2507.13396
+UR  - https://arxiv.org/abs/2507.13396
+N1  - Author list verified against arXiv or publisher metadata. See academic-evidence.md for source status and version.
+ER  - 
+
+TY  - GEN
+TI  - Entity Matching using Large Language Models
+AU  - Peeters, Ralph
+AU  - Steiner, Aaron
+AU  - Bizer, Christian
+PY  - 2023
+DO  - 10.48550/arXiv.2310.11244
+UR  - https://arxiv.org/abs/2310.11244
+N1  - Author list verified against arXiv or publisher metadata. See academic-evidence.md for source status and version.
+ER  - 
+
+TY  - CONF
+TI  - Selectively Answering Ambiguous Questions
+AU  - Cole, Jeremy
+AU  - Zhang, Michael
+AU  - Gillick, Daniel
+AU  - Eisenschlos, Julian
+AU  - Dhingra, Bhuwan
+AU  - Eisenstein, Jacob
+PY  - 2023
+DO  - 10.18653/v1/2023.emnlp-main.35
+UR  - https://aclanthology.org/2023.emnlp-main.35/
+N1  - Author list verified against arXiv or publisher metadata. See academic-evidence.md for source status and version.
+ER  - 
+
+TY  - CONF
+TI  - TRAQ: Trustworthy Retrieval Augmented Question Answering via Conformal Prediction
+AU  - Li, Shuo
+AU  - Park, Sangdon
+AU  - Lee, Insup
+AU  - Bastani, Osbert
+PY  - 2024
+DO  - 10.18653/v1/2024.naacl-long.210
+UR  - https://aclanthology.org/2024.naacl-long.210/
+N1  - Author list verified against arXiv or publisher metadata. See academic-evidence.md for source status and version.
+ER  - 
+
+TY  - CONF
+TI  - InjecAgent: Benchmarking Indirect Prompt Injections in Tool-Integrated Large Language Model Agents
+AU  - Zhan, Qiusi
+AU  - Liang, Zhixiang
+AU  - Ying, Zifan
+AU  - Kang, Daniel
+PY  - 2024
+DO  - 10.18653/v1/2024.findings-acl.624
+UR  - https://aclanthology.org/2024.findings-acl.624/
+N1  - Author list verified against arXiv or publisher metadata. See academic-evidence.md for source status and version.
+ER  - 
+
+TY  - CONF
+TI  - Prompt Injection Attack to Tool Selection in LLM Agents
+AU  - Shi, Jiawen
+AU  - Yuan, Zenghui
+AU  - Tie, Guiyao
+AU  - Zhou, Pan
+AU  - Gong, Neil Zhenqiang
+AU  - Sun, Lichao
+PY  - 2026
+DO  - 10.14722/ndss.2026.230675
+UR  - https://www.ndss-symposium.org/ndss-paper/prompt-injection-attack-to-tool-selection-in-llm-agents/
+N1  - Author list verified against arXiv or publisher metadata. See academic-evidence.md for source status and version.
+ER  - 
+
+TY  - JOUR
+TI  - Explainable machine learning for corporate financial distress prediction in Vietnam
+AU  - Nam, Tuyen Le
+AU  - Huy, Tam Phan
+PY  - 2026
+JO  - Cogent Business & Management
+DO  - 10.1080/23311975.2026.2670659
+UR  - https://www.tandfonline.com/doi/full/10.1080/23311975.2026.2670659
+N1  - Source status, outcome definitions and limitations are described in academic-evidence.md.
+ER  - 
+
+TY  - JOUR
+TI  - Hybridizing Structural Credit Risk and Machine Learning for Corporate Distress Prediction: Evidence from Indonesian Non-Financial Public Firms
+AU  - Senchaki, Nakula
+AU  - Rokhim, Rofikoh
+PY  - 2026
+JO  - Journal of Accounting and Finance Management
+DO  - 10.38035/jafm.v7i2.3266
+UR  - https://dinastires.org/JAFM/article/view/3266
+N1  - Source status, outcome definitions and limitations are described in academic-evidence.md.
+ER  - 
+
+TY  - JOUR
+TI  - Default prediction and contagion risk assessment in corporate guarantee networks via dynamic heterogeneous graph neural networks
+AU  - Yang, Shudan
+AU  - Liu, Xiaoyu
+PY  - 2026
+JO  - Journal of King Saud University: Computer and Information Sciences
+DO  - 10.1007/s44443-026-00904-2
+UR  - https://link.springer.com/article/10.1007/s44443-026-00904-2
+N1  - Source status, outcome definitions and limitations are described in academic-evidence.md.
+ER  - 
+
+TY  - JOUR
+TI  - Predicting corporate credit risk: Network contagion via trade credit
+AU  - Berloco, Claudia
+AU  - De Francisci Morales, Gianmarco
+AU  - Frassineti, Daniele
+AU  - Greco, Greta
+AU  - Kumarasinghe, Hashani
+AU  - Lamieri, Marco
+AU  - Massaro, Emanuele
+AU  - Miola, Arianna
+AU  - Yang, Shuyi
+PY  - 2021
+JO  - PLOS ONE
+DO  - 10.1371/journal.pone.0250115
+UR  - https://journals.plos.org/plosone/article?id=10.1371/journal.pone.0250115
+N1  - Author list verified against PLOS. Editorial note 10.1371/journal.pone.0347629.
+ER  - 
+
+
