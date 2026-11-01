@@ -135,4 +135,3 @@ Policy chạy trước retrieval, trước gửi LLM và trước export/chain a
 Mọi call có deadline, retry/backoff có trần, nguồn bị rate-limit có circuit breaker; budget reservation trước fan-out. Dùng stable job IDs, unique constraints, outbox và receipt reconciliation. Một HTTP timeout không đủ kết luận chưa mua report/chưa gửi tx. Checkpoint chỉ giữ dữ liệu tối thiểu có quyền; encrypt và retention áp dụng cả traces, caches và embeddings. Tách tenant và row access, không ghi raw audio/token/key vào logs.
 
 Quan sát theo `goal_id`/`source_id`: source age, retrieval failures, extraction conflicts, citation support, cost, queue wait, ASR/LLM/TTS latency, stop-speech latency và anchoring backlog. Người dùng chỉ nhận câu hỏi cần quyết định, phát hiện đáng chú ý, failure hay kết quả; không nghe log kỹ thuật, hidden reasoning hoặc heartbeat lặp lại.
-

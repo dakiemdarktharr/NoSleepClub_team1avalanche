@@ -20,7 +20,7 @@ Sản phẩm ban đầu nên phục vụ chuyên viên thẩm định doanh nghi
 
 [Team1 UniHack](https://team1vn.xyz/) cho phép ý tưởng riêng hoặc dự án có sẵn, cần một phần thật chạy trên Avalanche. Hạn nộp là **23:59 ngày 21/11/2026, giờ Việt Nam**, không phải ngày chung kết 30/11. Nhóm tối đa ba người; cần repo, slides và video demo 2–3 phút mở xem được. Tích hợp Avalanche chiếm 25/100 điểm. [Đối chiếu đề và kế hoạch đáp ứng](docs/brief-nora-review.md) ghi chi tiết; chưa gửi bài hoặc đăng ký thay người dùng.
 
-Đã đọc project `zalo_hacks` tại `D:/jarvis` và đối chiếu [repo NORA](https://github.com/dakiemdarktharr/NoSleepClub_zalo_hacks). Tài liệu cập nhật mô tả Rust native Windows, PTT, ASR/TTS local, goal/checkpoint, broker có kiểu dữ liệu, quyền và receipt verification. Một số tài liệu kiến trúc cũ vẫn nói phương án trước đây nên không được dùng làm trạng thái hiện tại. Chưa chạy lại test hoặc benchmark.
+Đã đọc project `zalo_hacks` tại workspace NORA cục bộ và đối chiếu [repo NORA](https://github.com/dakiemdarktharr/NoSleepClub_zalo_hacks). Tài liệu cập nhật mô tả Rust native Windows, PTT, ASR/TTS local, goal/checkpoint, broker có kiểu dữ liệu, quyền và receipt verification. Một số tài liệu kiến trúc cũ vẫn nói phương án trước đây nên không được dùng làm trạng thái hiện tại. Chưa chạy lại test hoặc benchmark.
 
 Phần nên kế thừa là **giữ mục tiêu, trả lời bổ sung vào đúng goal, checkpoint, kiểm quyền, đọc lại kết quả và chỉ thông báo việc đáng biết**. Phần cần xây mới là dữ liệu doanh nghiệp, entity resolution theo MST, nguồn được cấp phép, timeline, risk methodology và terminal. Số đo synthetic trong README NORA chưa chứng minh casual chat/full-duplex tiếng Việt đạt độ trễ hoặc chất lượng sản phẩm. [Nguồn trạng thái cập nhật](https://github.com/dakiemdarktharr/NoSleepClub_zalo_hacks/blob/main/docs/production-integration.md).
 
@@ -199,4 +199,3 @@ Repo public được tạo đúng tên **[NoSleepClub_team1avalanche](https://gi
 Ba agent chuyên môn áp dụng Agency Agents và dùng `gpt-6.1-terra / xhigh` theo yêu cầu. **CoChat đã được dùng** để tìm/fetch và đối chiếu paper gốc. **Consensus đã được gọi nhưng hết quota**; không có kết quả Deep Research từ Consensus. **Zotero không có plugin khả dụng** sau tìm kiếm; chưa đồng bộ tài khoản, RIS là phương án nhập tài liệu. [Phương pháp và nhật ký khả năng công cụ](research/methodology.md) ghi giới hạn này, full-text/abstract-only và nguồn bổ sung.
 
 Chưa mua feed, thu dữ liệu toàn quốc, benchmark lại NORA, chạy user study, huấn luyện risk model, code sản phẩm, triển khai contract, nộp bài thi hay liên hệ vendor. Những khâu đó nằm trong kế hoạch với điều kiện cụ thể. Báo cáo là nền để chọn phạm vi thực hiện và kiểm chứng tiếp, không phải chứng nhận sản phẩm đã sẵn sàng.
-

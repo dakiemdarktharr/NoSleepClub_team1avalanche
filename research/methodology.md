@@ -16,7 +16,7 @@ Ngày chốt nghiên cứu: **01/11/2026, Asia/Saigon**. Ưu tiên công bố 20
 | Web | Mở arXiv/ACL/publisher, luật, cổng dữ liệu và tài liệu chính thức | Một số trang timeout, scan không OCR, giá/quyền hợp đồng chưa biết; hạn chế cụ thể nằm ở từng phụ lục |
 | Firecrawl | Đọc live trang Team1 khi web fetch thất bại | Chỉ dùng nội dung đề, không lấy danh sách người tham gia làm dữ liệu dự án |
 | GitHub | Tìm NORA và tạo repo public, xuất tài liệu bằng connector | Không gửi bài dự thi, không liên hệ bên thứ ba, không mua dịch vụ |
-| Project local | Đọc tài liệu NORA và Cargo workspace ở `D:/jarvis` | Không chạy benchmark lại hay đọc secrets; revision local chưa xác nhận |
+| Project local | Đọc tài liệu NORA và Cargo workspace ở workspace NORA cục bộ | Không chạy benchmark lại hay đọc secrets; revision local chưa xác nhận |
 
 Muốn dùng lại Consensus, hạn mức phải được khôi phục hoặc nâng qua [trang Consensus](https://consensus.app/continue?from=mcp&client=chatgpt&intent=upgrade) và người dùng yêu cầu thử lại. Không gắn nhãn bản báo cáo này là kết quả Consensus. Nếu người dùng có Zotero ở môi trường khác, nhập [papers.ris](papers.ris); đã bổ sung danh sách tác giả theo metadata nguồn gốc được kiểm, có DOI/URL và ghi chú cần giữ. Sau import vẫn nên kiểm cách Zotero nhận dạng ấn phẩm/preprint.
 
@@ -46,4 +46,3 @@ Không cố lấy paywalled text, vượt CAPTCHA/login, mua quota hay tạo dat
 | [Team1 UniHack](https://team1vn.xyz/) | Deadline, hồ sơ nộp, quy mô nhóm và yêu cầu Avalanche |
 
 Các phụ lục [học thuật](academic-evidence.md), [dữ liệu/Bloomberg](bloomberg-data.md) và [pháp lý](legal-feasibility.md) chứa liên kết trực tiếp gần từng nhận định. Không có bằng chứng nào trong tập này xác nhận sản phẩm đã đạt chất lượng terminal thương mại, dự báo được mọi doanh nghiệp hay tuân thủ pháp luật khi ra mắt.
-

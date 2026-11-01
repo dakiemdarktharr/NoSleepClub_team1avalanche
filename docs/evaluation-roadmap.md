@@ -90,4 +90,3 @@ Ba nhóm việc: (A) data/entity/evidence; (B) workflow/voice/terminal; (C) Fuji
 ## 8. Điều kiện môi trường khi bắt đầu code
 
 Không cài hoặc triển khai dịch vụ trong giai đoạn nghiên cứu. Trước khi dùng Node, xử lý cảnh báo môi trường về Node.js 24.18.0 và nâng ít nhất 24.22.1 theo kiểm tra bảo mật của phiên. Nếu chọn Vercel cho web UI, **rất nên cài Vercel CLI bằng `npm i -g vercel`** để agent dùng `vercel env pull`, `vercel deploy`, `vercel logs`; CLI chưa có trong phiên. Chỉ provision integrations sau khi chốt scope, quyền và ngân sách; backend worker/voice có thể chọn host riêng phù hợp vòng đời. Không có lý do phải chuyển toàn dự án sang Vercel để thực hiện nghiên cứu này.
-

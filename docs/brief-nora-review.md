@@ -21,7 +21,7 @@ Nguồn yêu cầu và điểm: [FAQ, lịch và Judging Criteria trên trang cu
 
 ## Đã đọc project `zalo_hacks` như thế nào
 
-Project được tìm qua danh sách project của Codex tại `D:/jarvis`, đối chiếu repo công khai [dakiemdarktharr/NoSleepClub_zalo_hacks](https://github.com/dakiemdarktharr/NoSleepClub_zalo_hacks). Đã đọc README, Cargo workspace, production integration, ADR-0006, validation và phần liên quan trong PRD/evaluation/workflow strategy. Không đọc secrets, dữ liệu người dùng hay chạy lại ứng dụng/benchmark. Git không cho đọc revision của thư mục bên ngoài workspace; vì vậy không gắn một commit SHA chưa xác nhận với snapshot tài liệu local đã đọc.
+Project được tìm qua danh sách project của Codex tại workspace NORA cục bộ, đối chiếu repo công khai [dakiemdarktharr/NoSleepClub_zalo_hacks](https://github.com/dakiemdarktharr/NoSleepClub_zalo_hacks). Đã đọc README, Cargo workspace, production integration, ADR-0006, validation và phần liên quan trong PRD/evaluation/workflow strategy. Không đọc secrets, dữ liệu người dùng hay chạy lại ứng dụng/benchmark. Git không cho đọc revision của thư mục bên ngoài workspace; vì vậy không gắn một commit SHA chưa xác nhận với snapshot tài liệu local đã đọc.
 
 Các tài liệu này có chênh lệch thời điểm: `architecture.md` và một số strategy vẫn giữ phương án cũ. README/production integration/ADR-0006/validation ngày 01/11 là mô tả cập nhật hơn. Không lấy mô tả Tauri/Python cũ để nói NORA hiện chạy Tauri/LangGraph.
 
@@ -43,4 +43,3 @@ README ghi 188 Rust tests và một hành trình synthetic WAV 1,68 giây: final
 Giữ các contract về goal, checkpoint, quyền, receipt và update policy. Với demo hackathon, ưu tiên một web terminal có mic/text để giám khảo mở dễ; client NORA là adapter Windows giai đoạn kế tiếp, tránh đóng gói lại cả desktop chỉ để hiện bảng công ty. Một domain API chung cho phép hai client dùng cùng định danh, bằng chứng và workflow.
 
 Nếu định hướng Windows-first là yêu cầu mới sau này, có thể dùng vỏ NORA ngay, nhưng vẫn phải đo live voice và kiểm lại nguồn dữ liệu/giấy phép. Dự án mới không kế thừa tự động quyền phân phối model, preset voice hay dữ liệu của cuộc thi khác.
-

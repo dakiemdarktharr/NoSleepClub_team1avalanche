@@ -76,4 +76,3 @@ News search bị lệch theo độ nổi tiếng, ngành, vùng, cách viết t�
 - Thử mẫu phân tầng theo DN niêm yết, UPCoM, tư nhân lớn và SME; đo đúng MST, precision khớp pháp nhân, độ mới, % có báo cáo/quan hệ/chứng cứ và độ phủ trạng thái pháp lý. Đánh giá cả âm tính giả và khả năng gỡ/cập nhật thông tin.
 - Rà luật và điều khoản hiện hành theo mục đích, đặc biệt dữ liệu cá nhân, tín dụng, bản án, tái phân phối và tự động ra quyết định; kết luận pháp lý phải được người có chuyên môn xác nhận.
 
-
