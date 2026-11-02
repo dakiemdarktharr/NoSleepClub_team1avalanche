@@ -16,7 +16,9 @@ try {
         & $cargo.Source build --release -p lantern-server --locked
         if ($LASTEXITCODE -ne 0) { throw 'Rust build không thành công; xem lỗi ở trên.' }
     }
-    $exe = if (Test-Path -LiteralPath $releaseExe) { $releaseExe } else { $debugExe }
+    $exe = if ((Test-Path -LiteralPath $releaseExe) -and (Test-Path -LiteralPath $debugExe)) {
+        if ((Get-Item -LiteralPath $debugExe).LastWriteTimeUtc -gt (Get-Item -LiteralPath $releaseExe).LastWriteTimeUtc) { $debugExe } else { $releaseExe }
+    } elseif (Test-Path -LiteralPath $releaseExe) { $releaseExe } else { $debugExe }
     $port = 3210
     Get-Content -LiteralPath (Join-Path $projectRoot '.env.local') | ForEach-Object {
         if ($_ -match '^\s*LANTERN_PORT\s*=\s*(\d{1,5})\s*$') { $port = [int]$Matches[1] }
@@ -37,7 +39,7 @@ try {
     $process = Start-Process -FilePath $exe -WorkingDirectory $projectRoot -WindowStyle Hidden -PassThru `
         -RedirectStandardOutput (Join-Path $runDir 'server.out.log') -RedirectStandardError (Join-Path $runDir 'server.err.log')
     $ready = $false
-    for ($attempt = 0; $attempt -lt 50; $attempt++) {
+    for ($attempt = 0; $attempt -lt 150; $attempt++) {
         if ($process.HasExited) { throw 'LANTERN không khởi động được. Xem data/server.err.log.' }
         try {
             $health = Invoke-RestMethod -Uri "$url/api/health" -TimeoutSec 1

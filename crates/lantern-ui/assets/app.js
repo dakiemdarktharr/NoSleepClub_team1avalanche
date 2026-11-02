@@ -7,6 +7,9 @@
   let navigationSequence = 0, userNavigationPending = 0, navigationController = null;
   const initialAsOf = document.getElementById('as-of')?.value || '';
   let renderedAsOf = initialAsOf;
+  // These drafts live only in this tab's memory and are not sent until submitted.
+  const investigationDrafts = new Map();
+  let comparisonDraft = null;
   const notify = (message, error = false) => {
     toast.textContent = message;
     toast.classList.toggle('error', error);
@@ -40,7 +43,11 @@
     const previous = current();
     const sameWorkspace = previous.view === view && previous.selected === (options.selected || '');
     const draft = document.getElementById('chat-input')?.value || '';
-    const investigationDraft = sameWorkspace ? (document.getElementById('investigate-query')?.value || '') : '';
+    const oldInvestigation = document.getElementById('investigate-query');
+    if (oldInvestigation) investigationDrafts.set(previous.selected, oldInvestigation.value);
+    const investigationDraft = investigationDrafts.get(options.selected || '') || '';
+    const oldComparison = workspace.querySelector('form[data-form="compare"]');
+    if (oldComparison) comparisonDraft = [...oldComparison.querySelectorAll('input[name="ids"]:checked')].map(input => input.value);
     const focused = workspace.contains(document.activeElement) ? document.activeElement : null;
     const focusedId = sameWorkspace ? focused?.id : '';
     const focusedAction = sameWorkspace ? focused?.dataset?.action : '';
@@ -51,6 +58,7 @@
     workspace.innerHTML = markup;
     const nextInput = document.getElementById('chat-input'); if (nextInput) nextInput.value = draft;
     const nextInvestigation = document.getElementById('investigate-query'); if (nextInvestigation) nextInvestigation.value = investigationDraft;
+    if (comparisonDraft) workspace.querySelectorAll('form[data-form="compare"] input[name="ids"]').forEach(input => { input.checked = comparisonDraft.includes(input.value); });
     if (dockOpen) document.getElementById('mira-dock')?.classList.add('open');
     if (push) history.pushState({}, '', '/?' + params);
     renderedAsOf = params.get('as_of') || initialAsOf;
@@ -163,10 +171,7 @@
   }
   async function search(query) {
     if (!query.trim()) return;
-    const startedAt = navigationSequence;
-    const result = await call('/api/search', { query: query.trim(), as_of: asOf() });
-    if (result.message) notify(result.message);
-    if (startedAt === navigationSequence && !userNavigationPending) await navigate('companies', { q: query.trim() });
+    await navigate('companies', { q: query.trim() });
   }
   function stopAudio() {
     if (audio) { audio.pause(); audio.currentTime = 0; audio = null; }
@@ -296,7 +301,8 @@
         case 'chat': {
           const message = String(data.get('message') || '').trim(); if (!message) break;
           const result = await call('/api/chat', { message, as_of:asOf() });
-          const input = form.querySelector('[name="message"]'); if (input) input.value = '';
+          const input = document.getElementById('chat-input');
+          if (input && input.value.trim() === message) input.value = '';
           await refresh();
           if (result.message) notify(result.message);
           document.getElementById('mira-dock')?.classList.add('open');
@@ -304,7 +310,12 @@
           break;
         }
         case 'investigation': {
+          const draftKey = current().selected;
+          const submittedQuery = String(data.get('query') || '').trim();
           const result = await call('/api/investigations', { company_id:String(data.get('company_id')), query:String(data.get('query') || '').trim(), as_of:asOf() });
+          const input = document.getElementById('investigate-query');
+          if (current().selected === draftKey && input && input.value.trim() === submittedQuery) { input.value = ''; investigationDrafts.delete(draftKey); }
+          else if ((investigationDrafts.get(draftKey) || '').trim() === submittedQuery) investigationDrafts.delete(draftKey);
           notify(result.message || 'Đã gửi yêu cầu nghiên cứu.'); await refresh(); break;
         }
         case 'compare': {
@@ -343,7 +354,11 @@
         case 'mira': document.getElementById('mira-dock')?.classList.add('open'); target.setAttribute('aria-expanded','true'); document.getElementById('chat-input')?.focus(); break;
         case 'mira-close': document.getElementById('mira-dock')?.classList.remove('open'); document.querySelector('.mira-mobile')?.setAttribute('aria-expanded','false'); document.querySelector('.mira-mobile')?.focus(); break;
         case 'focus-search': document.getElementById('command-input')?.focus(); break;
-        case 'suggest': { const input = document.getElementById('chat-input'); if (input) { input.value = target.dataset.text || ''; input.focus(); } break; }
+        case 'suggest': { const input = document.getElementById('chat-input'); if (input) { if (!input.value.trim()) input.value = target.dataset.text || ''; else notify('Bản nháp vẫn được giữ.'); input.focus(); } break; }
+        case 'scout-run': { target.disabled = true; try { const result = await call('/api/scout/run', {}); notify(result.message || 'Đã gửi yêu cầu Scout.'); await refresh(); } finally { if (target.isConnected) target.disabled = false; } break; }
+        case 'scout-toggle': { target.disabled = true; try { const result = await call('/api/scout/enabled', { enabled:target.dataset.enabled !== 'true' }); notify(result.message || 'Đã cập nhật Scout.'); await refresh(); } finally { if (target.isConnected) target.disabled = false; } break; }
+        case 'scout-resume': { if (!confirm('Bạn đã rà soát giới hạn và điều khoản nguồn trước khi tiếp tục?')) break; target.disabled = true; try { const result = await call('/api/scout/resume-after-review', {}); notify(result.message || 'Đã ghi nhận rà soát.'); await refresh(); } finally { if (target.isConnected) target.disabled = false; } break; }
+        case 'search-web': { const query = (target.dataset.query || '').trim(); if (!query) break; target.disabled = true; try { const result = await call('/api/search', { query, as_of:asOf() }); notify(result.message || 'Đã gửi yêu cầu tìm bằng AI.'); await refresh(); } finally { if (target.isConnected) target.disabled = false; } break; }
         case 'watch': { target.disabled = true; const result = await call('/api/watchlist', { company_id:target.dataset.id, watched:target.dataset.watched !== 'true' }); notify(result.message || 'Đã cập nhật danh sách theo dõi.'); await refresh(); break; }
         case 'review-evidence': { target.disabled = true; const decision = target.dataset.decision; if (!['subject_confirmed','not_about_company'].includes(decision)) throw new Error('Lựa chọn đối chiếu không hợp lệ.'); const result = await call('/api/evidence/' + encodeURIComponent(target.dataset.id) + '/review', { decision }); notify(result.message || 'Đã lưu lựa chọn đối chiếu chủ thể; nội dung chưa được kiểm chứng.'); await refresh(); break; }
         case 'budget-bound': { target.disabled = true; const result = await call('/api/budget/' + encodeURIComponent(target.dataset.id) + '/bound', {}); notify(result.message || 'Đã lưu dự phòng ước tính; đây không phải hóa đơn.'); await refresh(); break; }
@@ -355,7 +370,7 @@
         case 'chain-connect': { target.disabled = true; try { await connectWallet(); } catch (error) { reportResult('chain-result', error.message || 'Không kết nối được ví.', true); } finally { target.disabled = false; } break; }
         case 'chain-send': { target.disabled = true; try { await sendChain(); } catch (error) { reportResult('chain-result', 'Chưa xác nhận được kết quả gửi. Kiểm tra lịch sử ví trước khi thử lại. ' + (error.message || ''), true); } finally { target.disabled = false; } break; }
         case 'chain-retry': { target.disabled = true; try { await checkReceipt(); } catch (error) { reportResult('chain-result', error.message || 'Không kiểm tra được receipt.', true); } finally { target.disabled = false; } break; }
-        case 'record': if (!voiceRecipient()) throw new Error('Chưa cấu hình nhà cung cấp âm thanh; micro chưa được bật.'); if (sessionStorage.getItem(voiceConsentKey()) === 'yes') await startRecording(); else document.getElementById('voice-consent').showModal(); break;
+        case 'record': if (!voiceRecipient()) throw new Error('Chưa cấu hình nhà cung cấp âm thanh; micro chưa được bật.'); document.getElementById('mira-dock')?.classList.add('open'); document.querySelector('.mira-mobile')?.setAttribute('aria-expanded', 'true'); if (sessionStorage.getItem(voiceConsentKey()) === 'yes') await startRecording(); else document.getElementById('voice-consent').showModal(); break;
         case 'voice-decline': document.getElementById('voice-consent').close(); break;
         case 'voice-accept': if (!voiceRecipient()) throw new Error('Chưa cấu hình nhà cung cấp âm thanh; micro chưa được bật.'); document.getElementById('voice-consent').close(); sessionStorage.setItem(voiceConsentKey(),'yes'); await startRecording(); break;
         case 'forget-voice': sessionStorage.removeItem(voiceConsentKey()); notify('Đã đặt lại lựa chọn ghi âm.'); break;
@@ -376,6 +391,8 @@
       if (document.getElementById('report-dialog')?.open) document.getElementById('report-dialog').close();
       document.getElementById('navigation')?.classList.remove('open');
       document.getElementById('mira-dock')?.classList.remove('open');
+      document.querySelector('.mobile-menu')?.setAttribute('aria-expanded', 'false');
+      document.querySelector('.mira-mobile')?.setAttribute('aria-expanded', 'false');
     }
   });
   window.addEventListener('pagehide', () => { const session = recordingSession; if (session) { session.discard = true; session.controller.abort(); if (session.recorder?.state === 'recording') session.recorder.stop(); releaseSession(session); } stopAudio(); });
@@ -391,7 +408,7 @@
       const state = await response.json();
       const activeForm = document.activeElement?.closest('form');
       if (startedAt !== navigationSequence || userNavigationPending || busy || recordingSession || el('report-dialog')?.open || el('voice-consent')?.open || (activeForm && workspace.contains(activeForm))) return;
-      const signature = JSON.stringify({ companies:state.companies, investigations:state.investigations, evidence:state.evidence, messages:state.messages });
+      const signature = JSON.stringify({ companies:state.companies, investigations:state.investigations, evidence:state.evidence, messages:state.messages, scout:state.scout, storage:state.storage });
       if ((pollSignature === null || signature !== pollSignature) && !(await refresh())) return;
       pollSignature = signature;
     } catch (_) { /* A later poll will retry; mutations are never retried automatically. */ }

@@ -1,5 +1,5 @@
 [workspace]
-members = ["crates/lantern-core", "crates/lantern-connectors", "crates/lantern-ui", "crates/lantern-server"]
+members = ["crates/lantern-core", "crates/lantern-connectors", "crates/lantern-ui", "crates/lantern-scout", "crates/lantern-mongo", "crates/lantern-server"]
 resolver = "3"
 
 [workspace.package]

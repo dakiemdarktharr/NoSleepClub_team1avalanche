@@ -93,7 +93,8 @@ fn badge(s: &str) -> Markup {
     html! { span class="badge" { (s) } }
 }
 fn section_head(kicker: &str, heading: &str, description: &str) -> Markup {
-    html! { div class="page-heading" { div { p class="context-label" { (kicker) } h1 { (heading) } p class="page-subtitle" { (description) } } } }
+    let _ = (kicker, description);
+    html! { div class="page-heading" { h1 { (heading) } } }
 }
 
 /// Full document. All dynamic values are escaped by Maud.
@@ -110,14 +111,14 @@ pub fn render_page(snapshot: &Value, route: &str, selected: Option<&str>) -> Mar
         ""
     };
     html! {
-        (DOCTYPE) html lang="vi" { head { meta charset="utf-8"; meta name="viewport" content="width=device-width, initial-scale=1"; meta name="theme-color" content="#0b1522"; meta name="description" content="Không gian nghiên cứu doanh nghiệp cùng MIRA."; link rel="icon" href="/assets/icon.svg" type="image/svg+xml"; link rel="manifest" href="/manifest.webmanifest"; link rel="stylesheet" href="/assets/app.css"; title { "LANTERN VN · MIRA" } }
+        (DOCTYPE) html lang="vi" { head { meta charset="utf-8"; meta name="viewport" content="width=device-width, initial-scale=1"; meta name="theme-color" content="#0b1522"; meta name="description" content="Không gian nghiên cứu doanh nghiệp cùng MIRA."; link rel="icon" href="/assets/icon.svg" type="image/svg+xml"; link rel="manifest" href="/manifest.webmanifest"; link rel="stylesheet" href="/assets/app.css?v=6"; title { "LANTERN VN · MIRA" } }
         body { a class="skip-link" href="#main-content" { "Chuyển tới nội dung" }
             header class="topbar" {
                 button type="button" class="mobile-menu icon-button" data-action="menu" aria-label="Mở điều hướng" aria-expanded="false" { "☰" }
                 a class="wordmark" href="/?view=overview" data-view="overview" aria-label="LANTERN VN, trang tổng quan" { span class="brand-mark" aria-hidden="true" { "✦" } span { strong { "LANTERN" } small { "VN" } } }
                 div class="top-divider" aria-hidden="true" {}
                 form id="command-form" class="command" data-form="search" { label class="sr-only" for="command-input" { "Tìm doanh nghiệp theo tên hoặc mã số thuế" } span class="search-glyph" aria-hidden="true" { "⌕" } input id="command-input" name="query" type="search" autocomplete="off" placeholder="Tìm tên doanh nghiệp hoặc mã số thuế" required; kbd { "Ctrl K" } button type="submit" class="command-submit" { "Tìm" } }
-                div class="top-actions" { label class="date-control" title="Ngày chốt theo dữ liệu hệ thống đã lưu; không phải tái dựng toàn bộ thông tin công khai trong quá khứ" { span { "Hệ thống đã biết đến" } input id="as-of" type="date" value=(as_of) aria-label="Ngày chốt dữ liệu hệ thống đã lưu"; } span class=(if configured { "connection ok" } else { "connection" }) { span class="status-dot" {} (if configured { "Đã cấu hình" } else { "Chưa cấu hình" }) } button type="button" class="mira-mobile icon-button" data-action="mira" aria-label="Mở MIRA" aria-expanded="false" { "M" } }
+                div class="top-actions" { label class="date-control" title="Ngày chốt theo dữ liệu hệ thống đã lưu; không phải tái dựng toàn bộ thông tin công khai trong quá khứ" { span { "Hệ thống đã biết đến" } input id="as-of" type="date" value=(as_of) aria-label="Ngày chốt dữ liệu hệ thống đã lưu"; } span class=(if configured { "connection ok" } else { "connection" }) { span class="status-dot" {} (if configured { "MIRA đã cấu hình" } else { "MIRA chưa cấu hình" }) } button type="button" class="icon-button top-mic" data-action="record" aria-label="Ghi âm cho MIRA" title="Ghi âm cho MIRA" { "◉" } button type="button" class="mira-mobile icon-button" data-action="mira" aria-label="Mở MIRA" aria-expanded="false" aria-controls="mira-dock" { "M" } }
             }
             div class="mobile-date" { label for="as-of-mobile" { "Dữ liệu hệ thống đã biết đến" } input id="as-of-mobile" type="date" value=(as_of); }
             div class="app-shell" {
@@ -141,7 +142,7 @@ pub fn render_page(snapshot: &Value, route: &str, selected: Option<&str>) -> Mar
                 div class="dialog-section" { h3 { "Neo trên Avalanche Fuji" } p { "Bước này tùy chọn và cần ví của bạn. Cam kết cục bộ chưa được neo; chỉ receipt đúng contract và digest mới xác nhận giao dịch. Chuỗi không chứng minh nội dung là sự thật." } button type="button" class="button subtle" data-action="chain-prepare" { "Chuẩn bị neo Fuji" } div id="chain-prepared" hidden { p class="setting-note" { "Mạng: Fuji (chain ID 43113). Contract:" } code id="chain-contract" class="digest-line" {} p { "Bạn sẽ kiểm tra dữ liệu và phí trong ví trước khi xác nhận." } button type="button" class="button subtle" data-action="chain-connect" { "Kết nối ví và chọn Fuji" } } div id="chain-connected" hidden { p class="setting-note" { "Ví: " code id="chain-account" {} } button type="button" class="button primary" data-action="chain-send" { "Xác nhận gửi giao dịch" } } label for="transaction-hash" { "Transaction hash để kiểm tra receipt" } input id="transaction-hash" type="text" autocomplete="off" placeholder="0x…"; button type="button" class="button subtle" data-action="chain-retry" { "Kiểm tra lại receipt" } p id="chain-result" class="dialog-result" role="status" aria-live="polite" {} }
                 div class="dialog-actions" { button type="button" class="button subtle" data-action="report-close" { "Đóng" } }
             } }
-            script src="/assets/app.js" defer {} }
+            script src="/assets/app.js?v=6" defer {} }
         }
     }
 }
@@ -167,12 +168,13 @@ fn overview(snapshot: &Value) -> Markup {
     let cs = items(snapshot, "companies");
     let jobs = items(snapshot, "investigations");
     html! {
-        div class="overview-intro" { div { p class="context-label" { "Không gian nghiên cứu" } h1 { "Bắt đầu từ một câu hỏi." } p { "Tìm doanh nghiệp, thu thập bằng chứng và theo dõi điều cần kiểm tra cùng MIRA." } div class="intro-actions" { button type="button" class="button primary" data-action="focus-search" { "Tìm doanh nghiệp" } a class="text-link" href="/?view=sources" data-view="sources" { "Xem nguồn dữ liệu" } } } div class="intro-emblem" aria-hidden="true" { span {} span {} span {} i { "✦" } } }
-        div class="section-title" { div { p class="context-label" { "Bàn làm việc" } h2 { "Tiếp tục nghiên cứu" } } a href="/?view=companies" data-view="companies" class="text-link" { "Tất cả doanh nghiệp" } }
+        div class="overview-title" { h1 { "Nghiên cứu doanh nghiệp" } button type="button" class="button primary" data-action="focus-search" { "Tìm doanh nghiệp" } }
+        (monitoring_status(snapshot))
+        div class="section-title" { h2 { "Doanh nghiệp" } a href="/?view=companies" data-view="companies" class="text-link" { "Tất cả doanh nghiệp" } }
         div class="dashboard-grid" {
-            section class="panel wide-panel" aria-labelledby="recent-title" { div class="panel-head" { div { h3 id="recent-title" { "Doanh nghiệp gần đây" } p { "Hồ sơ có trong không gian làm việc" } } span class="panel-symbol" aria-hidden="true" { "◫" } }
+            section class="panel wide-panel" aria-labelledby="recent-title" { div class="panel-head" { div { h3 id="recent-title" { "Hồ sơ" } } span class="panel-symbol" aria-hidden="true" { "◫" } }
                 @if cs.is_empty() { div class="empty compact" { div class="empty-icon" aria-hidden="true" { "⌕" } div { strong { "Chưa có hồ sơ doanh nghiệp" } p { "Tìm theo tên hoặc mã số thuế để bắt đầu." } button type="button" class="inline-button" data-action="focus-search" { "Bắt đầu tìm kiếm" } } } }
-                @else { (company_rows(cs, false)) }
+                @else { (company_rows(&cs[..cs.len().min(6)], false)) }
             }
             section class="panel" aria-labelledby="active-title" { div class="panel-head" { div { h3 id="active-title" { "Tác vụ nghiên cứu" } p { "Cập nhật khi bạn giao việc" } } span class="panel-symbol" aria-hidden="true" { "◷" } }
                 @if jobs.is_empty() { div class="empty compact" { div class="empty-icon" aria-hidden="true" { "◷" } div { strong { "Chưa có tác vụ" } p { "MIRA sẽ hiển thị tiến trình khi bắt đầu nghiên cứu." } } } }
@@ -180,7 +182,53 @@ fn overview(snapshot: &Value) -> Markup {
                 a href="/?view=jobs" data-view="jobs" class="panel-footer" { "Mở danh sách tác vụ" span aria-hidden="true" { "↗" } }
             }
         }
-        section class="principle-band" { div class="principle-icon" aria-hidden="true" { "✦" } div { h3 { "Một kết luận cần có đường về nguồn." } p { "Xem nguồn, thời điểm và những gì còn thiếu trước khi đưa ra quyết định." } } a href="/?view=sources" data-view="sources" class="button subtle" { "Khám phá nguồn" } }
+    }
+}
+
+fn monitoring_status(snapshot: &Value) -> Markup {
+    let scout = snapshot.get("scout").unwrap_or(&Value::Null);
+    let storage = snapshot.get("storage").unwrap_or(&Value::Null);
+    let scout_configured = scout
+        .get("configured")
+        .and_then(Value::as_bool)
+        .unwrap_or(false);
+    let scout_enabled = scout
+        .get("enabled")
+        .and_then(Value::as_bool)
+        .unwrap_or(false);
+    let storage_configured = storage
+        .get("configured")
+        .and_then(Value::as_bool)
+        .unwrap_or(false);
+    let sources = items(scout, "sources");
+    let clusters = items(storage, "clusters");
+    let scout_status = |value: &str| match value {
+        "scheduled" => "Đã lên lịch",
+        "running" => "Đang chạy",
+        "disabled" => "Đã dừng",
+        "needs_review" => "Cần rà soát",
+        "waiting_mongo" => "Chờ MongoDB",
+        "attention" => "Cần kiểm tra",
+        _ => "Chưa xác minh",
+    };
+    html! {
+        section class="monitor-panel panel" aria-labelledby="monitor-title" {
+            div class="monitor-heading" { h2 id="monitor-title" { "Theo dõi dữ liệu" } div { button type="button" class="button subtle small" data-action="scout-toggle" data-enabled=(scout_enabled) disabled[!scout_configured] { @if scout_enabled { "Dừng lấy mới" } @else { "Bật Scout" } } button type="button" class="button subtle small" data-action="scout-run" disabled[!(scout_configured && scout_enabled)] { "Chạy Scout" } @if scout.get("origin_suspended").and_then(Value::as_bool).unwrap_or(false) { button type="button" class="button subtle small" data-action="scout-resume" disabled[!scout_enabled] { "Tiếp tục sau rà soát" } } } }
+            div class="monitor-grid" {
+                div { span { "Scout" } strong { @if scout_configured { (scout_status(field(scout, &["status"]))) } @else { "Chưa cấu hình" } }
+                    small { "Lần kiểm tra: " (text_or(field(scout, &["last_run_at"]), "Chưa có")) }
+                    small { "Dự kiến: " (text_or(field(scout, &["next_run_at"]), "Chưa có")) }
+                    small { "Độ phủ: " (text_or(field(scout, &["coverage"]), "Chưa xác minh")) }
+                }
+                div { span { "Lưu trữ" } strong { @if storage_configured { (text_or(field(storage, &["status"]), "Chưa xác minh")) } @else { "Chưa cấu hình" } }
+                    small { "Chế độ: " (text_or(field(storage, &["mode"]), "Chưa xác minh")) }
+                    @if let Some(pending) = storage.get("research_mirror").and_then(|m| m.get("pending")).and_then(Value::as_i64).filter(|n| *n > 0) { small { "Chờ đồng bộ: " (pending) } }
+                    @if clusters.is_empty() { small { "Cluster: chưa có thông tin" } }
+                    @for cluster in clusters { small { (text_or(field(cluster, &["name"]), "Cluster chưa có tên")) " · " (text_or(field(cluster, &["status"]), "Chưa xác minh")) @if !field(cluster, &["region"]).is_empty() { " · " (field(cluster, &["region"])) } } }
+                }
+            }
+            @if !sources.is_empty() { div class="monitor-sources" { @for source in sources { div { strong { (text_or(field(source, &["name"]), "Nguồn chưa có tên")) } } } } }
+        }
     }
 }
 
@@ -196,14 +244,15 @@ fn companies(snapshot: &Value) -> Markup {
         .and_then(Value::as_array)
         .map(Vec::as_slice)
         .unwrap_or_else(|| items(snapshot, "companies"));
-    let query = field(snapshot, &["search_query"]).trim().to_lowercase();
+    let query = field(snapshot, &["search_query"]).trim();
+    let normalized_query = query.to_lowercase();
     let pending = !query.is_empty()
         && items(snapshot, "investigations").iter().any(|j| {
-            field(j, &["query"]).trim().to_lowercase() == query
+            field(j, &["query"]).trim().to_lowercase() == normalized_query
                 && ["queued", "running", "verifying"].contains(&field(j, &["status"]))
         });
     html! { (section_head("Danh mục", "Doanh nghiệp", "Tìm đúng pháp nhân trước khi bắt đầu thẩm định."))
-        section class="panel full-panel" { div class="panel-head" { div { h3 { "Kết quả tìm kiếm" } p { "Chọn một hồ sơ để xem chi tiết và nguồn." } } }
+        section class="panel full-panel" { div class="panel-head" { div { h3 { "Kết quả tìm kiếm" } } @if !query.is_empty() && !pending { button type="button" class="button subtle small" data-action="search-web" data-query=(query) { "Tìm bằng AI" } } }
         @if pending { div class="search-pending" role="status" { span class="status-dot" {} span { "Đang tìm, " a href="/?view=jobs" data-view="jobs" { "xem Tác vụ" } } } }
         @if results.is_empty() && !pending { div class="empty large" { div class="empty-icon" { "⌕" } div { h3 { "Chưa có kết quả" } p { "Nhập tên hoặc mã số thuế trong thanh tìm kiếm. Kết quả phụ thuộc nguồn dữ liệu được cấu hình." } button class="button primary" type="button" data-action="focus-search" { "Tìm doanh nghiệp" } } } } @else if !results.is_empty() { (company_rows(results, false)) } }
     }
@@ -337,7 +386,7 @@ fn settings(snapshot: &Value) -> Markup {
 fn mira(snapshot: &Value) -> Markup {
     let messages = items(snapshot, "messages");
     html! { aside class="mira-dock" id="mira-dock" aria-label="Trợ lý MIRA" { div class="mira-head" { div class="mira-avatar" aria-hidden="true" { "✦" } div class="mira-title" { strong { "MIRA" } span { @if snapshot.get("historical_unavailable").and_then(Value::as_bool).unwrap_or(false) { "Hội thoại hiện tại" } @else { "Trợ lý nghiên cứu" } } } button type="button" class="icon-button mobile-close" data-action="mira-close" aria-label="Đóng MIRA" { "×" } }
-        div class="mira-body" id="mira-messages" aria-live="polite" { @if messages.is_empty() { div class="mira-welcome" { div class="welcome-mark" aria-hidden="true" { "✦" } p class="context-label" { "Xin chào, tôi là MIRA" } h2 { "Bạn đang tìm hiểu điều gì?" } p { "Tôi có thể giúp tìm doanh nghiệp, đọc bằng chứng và giữ tiến trình nghiên cứu của bạn." } div class="suggestion-list" { button type="button" data-action="suggest" data-text="Tôi muốn tìm hiểu một doanh nghiệp." { "Tìm hiểu một doanh nghiệp" span { "↗" } } button type="button" data-action="suggest" data-text="Hãy giải thích cách bạn kiểm tra nguồn thông tin." { "Cách kiểm tra nguồn thông tin" span { "↗" } } } } } @else { div class="messages" { @for m in messages { @let role = field(m, &["role", "speaker"]); div class=(if role == "user" { "message user-message" } else { "message assistant-message" }) { span class="message-role" { (if role == "user" { "Bạn" } else { "MIRA" }) } p { (text_or(field(m, &["content", "text", "message"]), "")) } @if role != "user" && !field(m, &["content", "text", "message"]).is_empty() { div class="voice-actions" { button type="button" class="speak-button" data-action="speak" data-text=(field(m, &["content", "text", "message"])) { "▶ Nghe từ dịch vụ" } button type="button" class="speak-button" data-action="device-speak" data-text=(field(m, &["content", "text", "message"])) { "Giọng thiết bị" } } } } } } } }
+        div class="mira-body" id="mira-messages" aria-live="polite" { @if messages.is_empty() { div class="mira-welcome" { h2 { "Chào bạn, mình là MIRA." } p { "Bạn muốn tìm hiểu doanh nghiệp nào?" } div class="suggestion-list" { button type="button" data-action="suggest" data-text="Mình muốn tìm hiểu một doanh nghiệp." { "Tìm hiểu doanh nghiệp" span { "↗" } } button type="button" data-action="suggest" data-text="Bạn kiểm tra nguồn thông tin như thế nào?" { "Cách kiểm tra nguồn" span { "↗" } } } } } @else { div class="messages" { @for m in messages { @let role = field(m, &["role", "speaker"]); div class=(if role == "user" { "message user-message" } else { "message assistant-message" }) { span class="message-role" { (if role == "user" { "Bạn" } else { "MIRA" }) } p { (text_or(field(m, &["content", "text", "message"]), "")) } @if role != "user" && !field(m, &["content", "text", "message"]).is_empty() { div class="voice-actions" { button type="button" class="speak-button" data-action="speak" data-text=(field(m, &["content", "text", "message"])) { "▶ Nghe từ dịch vụ" } button type="button" class="speak-button" data-action="device-speak" data-text=(field(m, &["content", "text", "message"])) { "Giọng thiết bị" } } } } } } } }
         div class="mira-compose" { div id="recording-state" class="recording-state" hidden { span class="record-dot" {} span { "Đang ghi âm" } button type="button" class="inline-button" data-action="stop-recording" { "Dừng ghi" } } form data-form="chat" { label class="sr-only" for="chat-input" { "Nhắn cho MIRA" } textarea id="chat-input" name="message" placeholder="Nhắn hoặc nói với MIRA..." rows="2" required {} div class="compose-actions" { button type="button" class="icon-button mic-button" data-action="record" aria-label="Ghi âm" title="Ghi âm" { "◉" } button type="button" class="inline-button" data-action="stop-audio" { "Dừng âm thanh" } button type="submit" class="send-button" aria-label="Gửi tin nhắn" { "↑" } } } p { "Kiểm tra nguồn trước khi đưa ra quyết định." } }
     } }
 }
@@ -398,5 +447,54 @@ mod tests {
         assert_eq!(page.matches("data-action=\"budget-bound\"").count(), 1);
         assert!(page.contains("Dự phòng ước tính $0.01"));
         assert!(page.contains("không phải hóa đơn"));
+    }
+
+    #[test]
+    fn monitoring_never_invents_a_connection_or_allows_an_unconfigured_run() {
+        let page = render_workspace(&json!({}), "overview", None).into_string();
+        assert!(page.contains("Chưa cấu hình"));
+        assert!(page.contains("Chưa xác minh"));
+        assert!(page.contains("data-action=\"scout-run\" disabled"));
+        let disabled = render_workspace(
+            &json!({"scout":{"configured":true,"enabled":false}}),
+            "overview",
+            None,
+        )
+        .into_string();
+        assert!(disabled.contains("data-action=\"scout-run\" disabled"));
+    }
+
+    #[test]
+    fn monitoring_shows_only_snapshot_sources_clusters_and_coverage() {
+        let snapshot = json!({
+            "scout":{"configured":true,"enabled":true,"status":"Đang chờ", "coverage":"2 nguồn", "last_run_at":"2026-11-02", "sources":[{"name":"Nguồn A", "status":"Khả dụng", "last_checked_at":"2026-11-02", "coverage":"Giới hạn"}]},
+            "storage":{"configured":true,"mode":"MongoDB Atlas", "status":"Chưa xác minh", "clusters":[{"name":"A <script>","status":"Đang kiểm tra","region":"ap-southeast-1"},{"name":"B","status":"Không khả dụng"}]}
+        });
+        let page = render_workspace(&snapshot, "overview", None).into_string();
+        assert!(page.contains("data-action=\"scout-run\">"));
+        for expected in [
+            "2 nguồn",
+            "Nguồn A",
+            "2026-11-02",
+            "MongoDB Atlas",
+            "ap-southeast-1",
+            "Không khả dụng",
+            "A &lt;script&gt;",
+        ] {
+            assert!(page.contains(expected), "missing {expected}");
+        }
+        assert!(!page.contains("A <script>"));
+    }
+    #[test]
+    fn web_search_requires_a_separate_explicit_action() {
+        let page = render_workspace(
+            &json!({"search_query":"FPT <script>", "search_results":[], "investigations":[]}),
+            "companies",
+            None,
+        )
+        .into_string();
+        assert!(page.contains("data-action=\"search-web\""));
+        assert!(page.contains("FPT &lt;script&gt;"));
+        assert!(!page.contains("FPT <script>"));
     }
 }

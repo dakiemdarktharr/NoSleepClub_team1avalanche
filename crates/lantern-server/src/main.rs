@@ -1,6 +1,10 @@
 //! Single-user loopback web/PWA host. Secrets stay on the Rust side.
 mod chain;
+mod mongo_runtime;
 mod pipeline;
+mod research_mirror;
+mod scout_runtime;
+mod scout_store;
 
 use anyhow::{Context, Result, ensure};
 use axum::{
@@ -32,6 +36,9 @@ pub(crate) struct App {
     provider_slots: Arc<Semaphore>,
     registry: Option<String>,
     rpc: String,
+    scout: Option<Arc<scout_runtime::ScoutRuntime>>,
+    mongo: Option<Arc<mongo_runtime::MongoRuntime>>,
+    research_mirror: Option<Arc<research_mirror::ResearchMirror>>,
 }
 
 #[derive(Debug)]
@@ -111,11 +118,36 @@ fn snapshot(app: &App, q: &ViewQuery) -> Result<Value> {
     // Company profiles and job state are not yet bitemporal. Do not present
     // today's values as though they were known at an earlier date.
     let historical_unavailable = as_of < today();
-    let companies = if historical_unavailable {
+    let mut companies = if historical_unavailable {
         vec![]
     } else {
         app.store.list_companies("", 300, 0)?
     };
+    if !historical_unavailable {
+        let mut seen: std::collections::HashSet<String> =
+            companies.iter().map(|c| c.id.clone()).collect();
+        if let Some(query) = q.q.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
+            for company in app.store.list_companies(query, 200, 0)? {
+                if seen.insert(company.id.clone()) {
+                    companies.push(company);
+                }
+            }
+        }
+        for id in q
+            .selected
+            .iter()
+            .map(String::as_str)
+            .chain(q.ids.as_deref().unwrap_or("").split(',').take(4))
+            .filter(|id| !id.is_empty())
+        {
+            if !seen.contains(id)
+                && let Some(company) = app.store.get_company(id)?
+            {
+                seen.insert(company.id.clone());
+                companies.push(company);
+            }
+        }
+    }
     let mut evidence = Vec::new();
     for company in &companies {
         evidence.extend(app.store.list_evidence(&company.id, Some(&as_of))?);
@@ -202,12 +234,29 @@ fn snapshot(app: &App, q: &ViewQuery) -> Result<Value> {
             }
         }
     }
+    let scout = app
+        .scout
+        .as_ref()
+        .and_then(|s| s.status().ok())
+        .unwrap_or_else(|| json!({"configured":false,"enabled":false}));
+    let mut storage = app.mongo.as_ref().map(|m| {
+        let status = m.status_json();
+        let ready = status["ready"].as_bool().unwrap_or(false);
+        let failed = status["failed_cluster"].as_str();
+        let cluster = |id: &str| if ready {"Đã thiết lập kết nối"} else if failed == Some(id) {"Kết nối không khả dụng"} else {"Chưa xác minh"};
+        json!({"configured":status["configured"],"mode":"MongoDB Atlas (SQLite cục bộ)",
+            "status":if ready {"Đã thiết lập kết nối"} else {"Chưa sẵn sàng"},
+            "clusters":[{"name":"A","status":cluster("a"),"region":null},{"name":"B","status":cluster("b"),"region":null}]})
+    }).unwrap_or_else(|| json!({"configured":true,"mode":"SQLite cục bộ","status":"Đang dùng cục bộ","clusters":[]}));
+    if let Some(mirror) = &app.research_mirror {
+        storage["research_mirror"] = mirror.status().unwrap_or(Value::Null);
+    }
     Ok(
         json!({"companies":companies,"search_results":filtered,"search_query":q.q.as_deref().unwrap_or(""),
         "selected_ids":ids,"investigations":investigations,"evidence":evidence,
         "messages":app.store.messages(40)?,"events":events,"sources":app.store.list_sources()?,
         "config":config,"reservations":reservations,"as_of":as_of,"temporal_mode":"system_known",
-        "historical_unavailable":historical_unavailable,"report_ready_ids":report_ready_ids}),
+        "historical_unavailable":historical_unavailable,"report_ready_ids":report_ready_ids,"scout":scout,"storage":storage}),
     )
 }
 fn checked_view(q: &ViewQuery) -> &str {
@@ -441,6 +490,7 @@ async fn review_evidence(
             "Lựa chọn rà soát không hợp lệ.".into(),
         ));
     }
+    let _mirror_guard = research_mirror::review_guard().await;
     app.store.review_evidence(&id, &input.decision)?;
     Ok(Json(
         json!({"ok":true,"message":"Đã lưu rà soát chủ thể. Việc này không chứng nhận nội dung nguồn hoặc kết luận rủi ro."}),
@@ -737,12 +787,92 @@ async fn speech(State(app): State<App>, Json(input): Json<SpeechInput>) -> ApiRe
         .into_response())
 }
 
+async fn scout_run(State(app): State<App>) -> ApiResult<Json<Value>> {
+    let scout = app.scout.as_ref().ok_or_else(|| {
+        ApiError(
+            StatusCode::SERVICE_UNAVAILABLE,
+            "Scout chưa cấu hình.".into(),
+        )
+    })?;
+    scout.run_now().map(Json).map_err(|_| {
+        ApiError(
+            StatusCode::BAD_REQUEST,
+            "Scout chưa sẵn sàng; kiểm tra cấu hình và lịch nguồn.".into(),
+        )
+    })
+}
+#[derive(Deserialize)]
+struct ScoutEnabled {
+    enabled: bool,
+}
+async fn scout_enabled(
+    State(app): State<App>,
+    Json(input): Json<ScoutEnabled>,
+) -> ApiResult<Json<Value>> {
+    let scout = app.scout.as_ref().ok_or_else(|| {
+        ApiError(
+            StatusCode::SERVICE_UNAVAILABLE,
+            "Scout chưa cấu hình.".into(),
+        )
+    })?;
+    scout.set_enabled(input.enabled).map_err(|_| {
+        ApiError(
+            StatusCode::BAD_REQUEST,
+            "Không đổi được trạng thái Scout.".into(),
+        )
+    })?;
+    Ok(Json(
+        json!({"message":if input.enabled {"Đã bật Scout."} else {"Đã dừng lấy nguồn mới; dữ liệu chờ vẫn tiếp tục được lưu."}}),
+    ))
+}
+async fn scout_resume(State(app): State<App>) -> ApiResult<Json<Value>> {
+    let scout = app.scout.as_ref().ok_or_else(|| {
+        ApiError(
+            StatusCode::SERVICE_UNAVAILABLE,
+            "Scout chưa cấu hình.".into(),
+        )
+    })?;
+    scout.resume_after_review().map(Json).map_err(|_| {
+        ApiError(
+            StatusCode::BAD_REQUEST,
+            "Chưa thể tiếp tục Scout; kiểm tra chính sách nguồn.".into(),
+        )
+    })
+}
+async fn storage_health(State(app): State<App>) -> Json<Value> {
+    let mut result = match &app.mongo {
+        Some(mongo) => mongo.health().await,
+        None => json!({"enabled":false,"status":"sqlite_only"}),
+    };
+    if let Some(mirror) = &app.research_mirror {
+        result["research_mirror"] = mirror.status().unwrap_or(Value::Null);
+    }
+    Json(result)
+}
+async fn storage_candidates(State(app): State<App>) -> ApiResult<Json<Value>> {
+    let mongo = app
+        .mongo
+        .as_ref()
+        .ok_or_else(|| ApiError(StatusCode::SERVICE_UNAVAILABLE, "MongoDB chưa bật.".into()))?;
+    mongo.read_candidates(100).await.map(Json).map_err(|_| {
+        ApiError(
+            StatusCode::SERVICE_UNAVAILABLE,
+            "Chưa thể đọc MongoDB.".into(),
+        )
+    })
+}
+
 fn routes(app: App) -> Router {
     Router::new()
         .route("/", get(page))
         .route("/ui", get(fragment))
         .route("/api/state", get(state))
         .route("/api/health", get(health))
+        .route("/api/scout/run", post(scout_run))
+        .route("/api/scout/enabled", post(scout_enabled))
+        .route("/api/scout/resume-after-review", post(scout_resume))
+        .route("/api/storage/health", get(storage_health))
+        .route("/api/storage/candidates", get(storage_candidates))
         .route("/health", get(health))
         .route("/api/search", post(search))
         .route("/api/investigations", post(investigate))
@@ -817,10 +947,11 @@ fn routes(app: App) -> Router {
 
 fn read_local_settings() -> Result<BTreeMap<String, String>> {
     let path = PathBuf::from(".env.local");
-    if !path.is_file() {
-        return Ok(BTreeMap::new());
-    }
-    let bytes = std::fs::read(&path)?;
+    let bytes = if path.is_file() {
+        std::fs::read(&path)?
+    } else {
+        Vec::new()
+    };
     ensure!(bytes.len() <= 64 * 1024, "local settings exceed 64 KiB");
     let text = std::str::from_utf8(&bytes)?.trim_start_matches('\u{feff}');
     let mut result = BTreeMap::new();
@@ -835,13 +966,60 @@ fn read_local_settings() -> Result<BTreeMap<String, String>> {
             }
         }
     }
+    load_mongo_secrets(&mut result);
     Ok(result)
+}
+fn load_mongo_secrets(result: &mut BTreeMap<String, String>) {
+    if !setting(result, "LANTERN_MONGO_ENABLED", "false").eq_ignore_ascii_case("true") {
+        return;
+    }
+    if let Some(path) = std::env::var("LANTERN_MONGO_SECRETS_FILE")
+        .ok()
+        .or_else(|| result.get("LANTERN_MONGO_SECRETS_FILE").cloned())
+        .filter(|v| !v.is_empty())
+    {
+        let Ok(secret) = std::fs::read(path) else {
+            tracing::warn!("MongoDB secrets file unavailable");
+            return;
+        };
+        if secret.len() > 64 * 1024 {
+            tracing::warn!("MongoDB secrets file too large");
+            return;
+        }
+        let Ok(secret) = std::str::from_utf8(&secret) else {
+            tracing::warn!("MongoDB secrets file is not UTF-8");
+            return;
+        };
+        let secret = secret.trim_start_matches('\u{feff}');
+        for line in secret.lines().filter(|l| !l.trim_start().starts_with('#')) {
+            if let Some((key, value)) = line.split_once('=') {
+                let key = key.trim();
+                if matches!(key, "LANTERN_MONGO_URI_A" | "LANTERN_MONGO_URI_B") {
+                    result.insert(
+                        key.to_string(),
+                        value.trim().trim_matches(['\'', '"']).to_string(),
+                    );
+                }
+            }
+        }
+    }
 }
 fn setting(values: &BTreeMap<String, String>, name: &str, default: &str) -> String {
     std::env::var(name)
         .ok()
         .or_else(|| values.get(name).cloned())
         .unwrap_or_else(|| default.into())
+}
+fn lock_instance(data_dir: &std::path::Path) -> Result<std::fs::File> {
+    let file = std::fs::OpenOptions::new()
+        .read(true)
+        .write(true)
+        .create(true)
+        .truncate(false)
+        .open(data_dir.join("lantern-instance.lock"))?;
+    file.try_lock()
+        .map_err(|_| anyhow::anyhow!("Another LANTERN instance is using this data directory"))?;
+    Ok(file)
 }
 
 #[tokio::main]
@@ -862,6 +1040,7 @@ async fn main() -> Result<()> {
     let data_dir = PathBuf::from(setting(&settings, "LANTERN_DATA_DIR", "data"));
     std::fs::create_dir_all(data_dir.join("reports"))?;
     std::fs::create_dir_all(data_dir.join("usage"))?;
+    let _instance_lock = lock_instance(&data_dir)?;
     let store = Store::open(data_dir.join("lantern.db"))?;
     let recovered = store.recover_interrupted()?;
     let config_path = setting(&settings, "LANTERN_NORA_CONFIG_PATH", "");
@@ -904,6 +1083,30 @@ async fn main() -> Result<()> {
     if !registry.is_empty() {
         ensure!(chain::valid_address(&registry), "Invalid registry address");
     }
+    let mongo_enabled =
+        setting(&settings, "LANTERN_MONGO_ENABLED", "false").eq_ignore_ascii_case("true");
+    let mongo = if mongo_enabled {
+        Some(Arc::new(
+            mongo_runtime::MongoRuntime::open(&settings, &data_dir).await,
+        ))
+    } else {
+        None
+    };
+    if mongo_enabled && store.research_outbox_backfill().is_err() {
+        tracing::warn!("Research backfill not completed; existing data remains local");
+    }
+    let scout_enabled =
+        setting(&settings, "LANTERN_SCOUT_ENABLED", "false").eq_ignore_ascii_case("true");
+    let scout = Some(Arc::new(scout_runtime::ScoutRuntime::open(
+        &data_dir,
+        store.clone(),
+        mongo.clone(),
+        scout_enabled,
+    )?));
+    let research_mirror = Some(Arc::new(research_mirror::ResearchMirror::new(
+        store.clone(),
+        mongo.clone(),
+    )));
     let app = App {
         store,
         connector: client,
@@ -921,17 +1124,46 @@ async fn main() -> Result<()> {
             "LANTERN_FUJI_RPC_URL",
             "https://api.avax-test.network/ext/bc/C/rpc",
         ),
+        scout,
+        mongo,
+        research_mirror,
     };
     let rpc = url::Url::parse(&app.rpc)?;
     ensure!(
         rpc.scheme() == "https" && rpc.username().is_empty() && rpc.password().is_none(),
         "RPC must use credential-free HTTPS"
     );
-    tokio::spawn(pipeline::runner(app.clone()));
     let listener = tokio::net::TcpListener::bind((host, port))
         .await
         .context("Cannot bind local web server")?;
-    tracing::info!(%port,recovered,"LANTERN ready on loopback; no microphone or API call starts until requested");
+    tokio::spawn(pipeline::runner(app.clone()));
+    if let Some(scout) = app.scout.clone() {
+        tokio::spawn(scout.run());
+    }
+    if let Some(mirror) = app.research_mirror.clone() {
+        mirror.wake();
+        tokio::spawn(mirror.run());
+    }
+    if let Some(mongo) = app.mongo.clone() {
+        let reconnect_settings = settings.clone();
+        let reconnect_data_dir = app.data_dir.clone();
+        let mirror = app.research_mirror.clone();
+        tokio::spawn(async move {
+            let mut tick = tokio::time::interval(std::time::Duration::from_secs(60));
+            loop {
+                tick.tick().await;
+                let state = mongo
+                    .try_reconnect(&reconnect_settings, &reconnect_data_dir)
+                    .await;
+                if state["ready"] == true
+                    && let Some(mirror) = &mirror
+                {
+                    mirror.wake();
+                }
+            }
+        });
+    }
+    tracing::info!(%port,recovered,scout_enabled,"LANTERN ready on loopback; Scout may poll sources if enabled");
     println!("LANTERN VN: http://127.0.0.1:{port}");
     axum::serve(listener, routes(app))
         .with_graceful_shutdown(async {
@@ -946,6 +1178,61 @@ mod tests {
     use super::*;
     use axum::body::Body;
     use tower::ServiceExt;
+    #[test]
+    fn only_one_server_can_use_a_data_directory_at_once() {
+        let dir = std::env::temp_dir().join(format!("lantern-lock-test-{}", Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let first = lock_instance(&dir).unwrap();
+        assert!(lock_instance(&dir).is_err());
+        drop(first);
+        drop(lock_instance(&dir).unwrap());
+        std::fs::remove_file(dir.join("lantern-instance.lock")).unwrap();
+        std::fs::remove_dir(dir).unwrap();
+    }
+    #[test]
+    fn search_and_selected_dossier_reach_beyond_first_page() {
+        let app = app();
+        for n in 0..205 {
+            app.store
+                .save_company(&Company {
+                    id: format!("synthetic-{n}"),
+                    name: if n == 204 {
+                        "Zzz Synthetic Target".into()
+                    } else {
+                        format!("Aaa Synthetic {n:03}")
+                    },
+                    tax_id: None,
+                    ticker: None,
+                    sector: None,
+                    location: None,
+                    website: None,
+                    source_url: None,
+                    description: None,
+                    identity_status: "candidate_unverified".into(),
+                    watched: false,
+                    updated_at: "2026-01-01T00:00:00Z".into(),
+                })
+                .unwrap();
+        }
+        let state = snapshot(
+            &app,
+            &ViewQuery {
+                q: Some("Zzz Synthetic".into()),
+                selected: Some("synthetic-204".into()),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        assert_eq!(state["search_results"].as_array().unwrap().len(), 1);
+        assert_eq!(state["search_results"][0]["id"], "synthetic-204");
+        assert!(
+            state["companies"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|c| c["id"] == "synthetic-204")
+        );
+    }
     fn app() -> App {
         App {
             store: Store::memory().unwrap(),
@@ -956,6 +1243,9 @@ mod tests {
             provider_slots: Arc::new(Semaphore::new(1)),
             registry: None,
             rpc: "https://api.avax-test.network/ext/bc/C/rpc".into(),
+            scout: None,
+            mongo: None,
+            research_mirror: None,
         }
     }
     #[tokio::test]

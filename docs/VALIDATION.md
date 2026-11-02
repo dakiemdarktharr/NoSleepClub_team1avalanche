@@ -2,6 +2,15 @@
 
 Ngày 01–02/11/2026, trên máy Windows của phiên phát triển. Đây là kết quả cho bản thử nghiệm một người dùng, không phải chứng nhận production hoặc đánh giá độ chính xác toàn quốc.
 
+## Scout và hai cluster, ngày 02/11/2026
+
+- `cargo test --workspace --locked --offline`: 86 test đạt. `cargo clippy --workspace --all-targets --locked --offline -- -D warnings`: đạt trên môi trường Windows phát triển.
+- Đã kiểm tra API GLEIF trực tiếp bằng bộ lọc địa chỉ pháp lý Việt Nam, sắp theo ngày cập nhật; Scout nhập một trang 100 hồ sơ LEI và hoàn tất hàng đợi. Đây là mẫu nguồn giới hạn, không phải độ phủ toàn quốc hay xác nhận MST.
+- Hai Atlas M0 trong hai project riêng cùng báo health sẵn sàng. API đọc lại đủ 100 bản ghi trên cả hai cluster; theo bảng định tuyến cố định, 50 khóa thuộc A và 50 thuộc B trong mẫu này. Kết quả này không bảo đảm dung lượng cân bằng với tập khác, không phải thử nghiệm failover hay khôi phục backup.
+- Sau khi bổ sung outbox điều tra và khởi động lại, hai bản ghi nghiên cứu hiện có được đồng bộ; pending về 0. Đây là xác nhận tích hợp nhỏ, không phải kiểm thử tải hay xác minh nội dung claim.
+- Smoke HTTP cục bộ qua các màn hình, asset, chặn request khác origin và kiểm soát ngân sách; không gọi AI trả phí. Đã mở giao diện bằng Playwright ở màn hình rộng và hẹp, tìm trong kho cục bộ mà không thay đổi ngân sách, và không thấy lỗi JavaScript ở console.
+- Registry biên dịch và chạy kiểm thử trên EVM cục bộ; dry run tới Fuji xác nhận chain ID 43113 nhưng ví thử nghiệm có 0 AVAX, nên không ký hay gửi giao dịch. Chưa có contract hoặc receipt Fuji đã triển khai.
+
 - `cargo test --workspace --locked --offline`: 38 test đạt; gồm ranh giới host/origin, hủy và nhập liệu nguyên tử, ngân sách, nguồn theo từng tác vụ, ngày quá khứ, review chủ thể, sửa báo cáo và kiểm hash.
 - `cargo clippy --workspace --all-targets --locked --offline -- -D warnings`: đạt. Script smoke kiểm tám màn hình, asset/PWA, header, request khác origin, WAV không hợp lệ và điều kiện xuất báo cáo; không gọi dịch vụ trả phí.
 - Chat thực dùng cấu hình NORA đã chọn; tra cứu FPT có trả một ứng viên và một lượt điều tra trả hai nguồn gợi ý. Một URL trong số đó trả 404 khi công cụ đọc nguồn thử truy cập; URL còn lại có nội dung được công cụ tìm kiếm lập chỉ mục nhưng tài liệu PDF đầy đủ vượt giới hạn đọc của công cụ. Các kết quả vẫn chưa được chuyên viên xác minh; nguồn được rà đúng chủ thể trước khi vào báo cáo. Một lượt thử trước đó gắn sai nguồn do thiếu ngữ cảnh pháp nhân đã được cách ly, sửa nguyên nhân và bổ sung kiểm thử; không dùng kết quả đó làm bằng chứng.

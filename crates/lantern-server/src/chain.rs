@@ -80,6 +80,9 @@ fn include_anchor(app: &App, id: &str, value: &mut Value) -> ApiResult<()> {
     }
     value["anchor"] = saved;
     value["anchoring_status"] = json!("receipt_confirmed");
+    value["anchor_observation_warning"] = json!(
+        "Receipt was observed at checked_at; it is not a finality proof and is not rechecked when reading this saved bundle."
+    );
     Ok(())
 }
 fn payload(app: &App, id: &str) -> ApiResult<Value> {
@@ -190,7 +193,7 @@ pub(crate) async fn commitment(
     let value = bundle(&app, &id)?;
     Ok(Json(
         json!({"ok":true,"commitment":value["commitment"],"anchoring_status":value["anchoring_status"],
-        "report_id":id,"message":"Đã lưu cam kết có salt cho phiên bản báo cáo. Chưa có giao dịch Avalanche; không chứng nhận dữ liệu đúng."}),
+        "report_id":id,"message":if value["anchoring_status"] == "receipt_confirmed" { "Receipt đã được ghi nhận tại thời điểm kiểm tra; cần kiểm tra lại chain, không chứng nhận nội dung đúng." } else { "Đã lưu cam kết có salt cho phiên bản báo cáo. Chưa có giao dịch Avalanche; không chứng nhận dữ liệu đúng." }}),
     ))
 }
 #[derive(Deserialize)]
@@ -279,12 +282,19 @@ pub(crate) async fn status(State(app): State<App>) -> ApiResult<Json<Value>> {
         "message":"Đã xác nhận RPC Fuji; kết nối RPC không có nghĩa báo cáo đã được neo."}),
     ))
 }
-fn calldata(digest: &str) -> ApiResult<String> {
-    let digest = digest.trim_start_matches("0x");
+fn calldata_with_supersedes(digest: &str, supersedes: &str) -> ApiResult<String> {
+    let digest = digest.strip_prefix("0x").unwrap_or(digest);
+    let supersedes = supersedes.strip_prefix("0x").unwrap_or(supersedes);
     if digest.len() != 64 || !digest.bytes().all(|b| b.is_ascii_hexdigit()) {
         return Err(ApiError(
             StatusCode::BAD_REQUEST,
             "Digest không hợp lệ.".into(),
+        ));
+    }
+    if supersedes.len() != 64 || !supersedes.bytes().all(|b| b.is_ascii_hexdigit()) {
+        return Err(ApiError(
+            StatusCode::BAD_REQUEST,
+            "Digest phiên bản trước không hợp lệ.".into(),
         ));
     }
     let selector = Keccak256::digest(b"anchor(bytes32,bytes32)");
@@ -292,22 +302,29 @@ fn calldata(digest: &str) -> ApiResult<String> {
         "0x{}{}{}",
         hex::encode(&selector[..4]),
         digest,
-        "0".repeat(64)
+        supersedes
     ))
 }
-fn matching_anchor_event(receipt: &Value, registry: &str, issuer: &str, digest: &str) -> bool {
+fn matching_anchor_event(
+    receipt: &Value,
+    registry: &str,
+    issuer: &str,
+    digest: &str,
+    supersedes: &str,
+) -> bool {
     let event_signature = format!(
         "0x{}",
         hex::encode(Keccak256::digest(b"Anchored(bytes32,address,bytes32)"))
     );
     let expected_digest = format!("0x{}", digest.trim_start_matches("0x"));
     let issuer_topic = format!("0x{}{}", "0".repeat(24), issuer.trim_start_matches("0x"));
-    let zero_topic = format!("0x{}", "0".repeat(64));
+    let supersedes_topic = format!("0x{}", supersedes.strip_prefix("0x").unwrap_or(supersedes));
     receipt["logs"].as_array().into_iter().flatten().any(|log| {
         let topics = log["topics"].as_array();
-        log["address"]
-            .as_str()
-            .is_some_and(|s| s.eq_ignore_ascii_case(registry))
+        log["removed"] != true
+            && log["address"]
+                .as_str()
+                .is_some_and(|s| s.eq_ignore_ascii_case(registry))
             && topics.is_some_and(|t| {
                 t.len() == 4
                     && t[0]
@@ -321,13 +338,60 @@ fn matching_anchor_event(receipt: &Value, registry: &str, issuer: &str, digest: 
                         .is_some_and(|s| s.eq_ignore_ascii_case(&issuer_topic))
                     && t[3]
                         .as_str()
-                        .is_some_and(|s| s.eq_ignore_ascii_case(&zero_topic))
+                        .is_some_and(|s| s.eq_ignore_ascii_case(&supersedes_topic))
             })
     })
+}
+/// Check internal RPC consistency. The configured contract and RPC remain trust assumptions.
+fn validate_observation(
+    receipt: &Value,
+    tx: &Value,
+    hash: &str,
+    registry: &str,
+    digest: &str,
+) -> Option<(String, String, String, String)> {
+    let eq =
+        |v: &Value, expected: &str| v.as_str().is_some_and(|s| s.eq_ignore_ascii_case(expected));
+    let issuer = tx["from"].as_str().filter(|s| valid_address(s))?;
+    let block_hash = receipt["blockHash"].as_str().filter(|s| valid_hash(s))?;
+    let block_number = receipt["blockNumber"].as_str().filter(|s| {
+        s.strip_prefix("0x")
+            .is_some_and(|n| !n.is_empty() && n.bytes().all(|b| b.is_ascii_hexdigit()))
+    })?;
+    let input = tx["input"].as_str()?;
+    if !input.is_ascii() || input.len() != 138 || !input.starts_with("0x") {
+        return None;
+    }
+    let supersedes = &input[74..138];
+    let expected = calldata_with_supersedes(digest, supersedes).ok()?;
+    if receipt["status"] != "0x1"
+        || !eq(&receipt["transactionHash"], hash)
+        || !eq(&tx["hash"], hash)
+        || !eq(&receipt["to"], registry)
+        || !eq(&tx["to"], registry)
+        || !eq(&receipt["from"], issuer)
+        || !eq(&tx["blockHash"], block_hash)
+        || !eq(&tx["blockNumber"], block_number)
+        || !input.eq_ignore_ascii_case(&expected)
+        || !matching_anchor_event(receipt, registry, issuer, digest, supersedes)
+    {
+        return None;
+    }
+    Some((
+        issuer.to_string(),
+        format!("0x{supersedes}"),
+        block_hash.to_string(),
+        block_number.to_string(),
+    ))
+}
+#[derive(Deserialize, Default)]
+pub(crate) struct TransactionQuery {
+    supersedes: Option<String>,
 }
 pub(crate) async fn transaction(
     State(app): State<App>,
     Path(id): Path<String>,
+    Query(query): Query<TransactionQuery>,
 ) -> ApiResult<Json<Value>> {
     let registry = app.registry.as_deref().ok_or_else(|| {
         ApiError(
@@ -354,8 +418,10 @@ pub(crate) async fn transaction(
     let digest = b["commitment"]["digest"]
         .as_str()
         .ok_or_else(|| ApiError(StatusCode::CONFLICT, "Thiếu digest.".into()))?;
+    let zero = "0".repeat(64);
+    let supersedes = query.supersedes.as_deref().unwrap_or(&zero);
     Ok(Json(
-        json!({"ok":true,"chain_id":"0xa869","transaction":{"to":registry,"data":calldata(digest)?,"value":"0x0"},
+        json!({"ok":true,"chain_id":"0xa869","transaction":{"to":registry,"data":calldata_with_supersedes(digest, supersedes)?,"value":"0x0"},
         "message":"Giao dịch chưa được gửi. Kiểm tra contract, chain và phí testnet trong ví trước khi ký."}),
     ))
 }
@@ -403,40 +469,31 @@ pub(crate) async fn anchor(
     )
     .await?;
     let digest = b["commitment"]["digest"].as_str().unwrap_or("");
-    let expected = calldata(digest)?;
-    if receipt["status"] != "0x1"
-        || !receipt["to"]
+    let (issuer, supersedes, block_hash, block_number) =
+        validate_observation(&receipt, &tx, &input.transaction_hash, registry, digest).ok_or_else(
+            || {
+                ApiError(
+                    StatusCode::CONFLICT,
+                    "Giao dịch, receipt hoặc sự kiện không khớp báo cáo và contract.".into(),
+                )
+            },
+        )?;
+    let block = rpc(&app, "eth_getBlockByNumber", json!([block_number, false])).await?;
+    if !block["hash"]
+        .as_str()
+        .is_some_and(|s| s.eq_ignore_ascii_case(&block_hash))
+        || !block["number"]
             .as_str()
-            .is_some_and(|s| s.eq_ignore_ascii_case(registry))
-        || !tx["to"]
-            .as_str()
-            .is_some_and(|s| s.eq_ignore_ascii_case(registry))
-        || !tx["input"]
-            .as_str()
-            .is_some_and(|s| s.eq_ignore_ascii_case(&expected))
+            .is_some_and(|s| s.eq_ignore_ascii_case(&block_number))
     {
         return Err(ApiError(
             StatusCode::CONFLICT,
-            "Receipt không xác nhận đúng contract và digest của báo cáo này.".into(),
-        ));
-    }
-    let issuer = tx["from"]
-        .as_str()
-        .filter(|s| valid_address(s))
-        .ok_or_else(|| {
-            ApiError(
-                StatusCode::CONFLICT,
-                "Transaction không có địa chỉ người phát hành hợp lệ.".into(),
-            )
-        })?;
-    if !matching_anchor_event(&receipt, registry, issuer, digest) {
-        return Err(ApiError(
-            StatusCode::CONFLICT,
-            "Receipt không có sự kiện Anchored khớp registry, issuer và digest.".into(),
+            "Block chưa khớp chuỗi RPC hiện tại; hãy kiểm tra lại sau.".into(),
         ));
     }
     let anchor = json!({"chain_id":43113,"transaction_hash":input.transaction_hash,"contract":registry,
-        "report_digest":digest,"issuer_address":tx["from"],"block_number":receipt["blockNumber"],"checked_at":now(),
+        "report_digest":digest,"issuer_address":issuer,"supersedes":supersedes,"block_number":block_number,"block_hash":block_hash,"checked_at":now(),
+        "observation":"receipt_seen_on_rpc_canonical_block_not_finality_proof",
         "identity_status":"address_not_organization_certified"});
     if !persist_new(&anchor_path(&app, &id)?, &anchor)? {
         let existing = bundle(&app, &id)?;
@@ -448,7 +505,7 @@ pub(crate) async fn anchor(
         }
     }
     Ok(Json(
-        json!({"ok":true,"anchor":anchor,"message":"Receipt và sự kiện khớp contract/digest trên Fuji. Địa chỉ ví chưa chứng nhận danh tính tổ chức; nguồn dữ liệu chưa được xác minh bởi blockchain."}),
+        json!({"ok":true,"anchor":anchor,"message":"RPC Fuji trả receipt và sự kiện khớp block tại thời điểm kiểm tra, chưa chứng minh finality. Ví không chứng nhận danh tính tổ chức; blockchain không xác minh nguồn."}),
     ))
 }
 #[cfg(test)]
@@ -456,10 +513,11 @@ mod tests {
     use super::*;
     #[test]
     fn calldata_is_exactly_two_abi_words() {
-        let data = calldata(&"ab".repeat(32)).unwrap();
+        let data = calldata_with_supersedes(&"ab".repeat(32), &"0".repeat(64)).unwrap();
         assert_eq!(data.len(), 138);
         assert!(data.ends_with(&"0".repeat(64)));
-        assert!(calldata("bad").is_err());
+        assert!(calldata_with_supersedes("bad", &"0".repeat(64)).is_err());
+        assert!(calldata_with_supersedes(&"ab".repeat(32), "bad").is_err());
     }
     #[test]
     fn addresses_reject_zero_and_code_injection() {
@@ -477,15 +535,64 @@ mod tests {
             hex::encode(Keccak256::digest(b"Anchored(bytes32,address,bytes32)"))
         );
         let mut receipt = json!({"logs":[{"address":registry,"topics":[event,format!("0x{digest}"),format!("0x{}{}","0".repeat(24),&issuer[2..]),format!("0x{}","0".repeat(64))]}]});
-        assert!(matching_anchor_event(&receipt, registry, issuer, &digest));
+        assert!(matching_anchor_event(
+            &receipt,
+            registry,
+            issuer,
+            &digest,
+            &"0".repeat(64)
+        ));
         receipt["logs"][0]["topics"][1] = json!(format!("0x{}", "cd".repeat(32)));
-        assert!(!matching_anchor_event(&receipt, registry, issuer, &digest));
+        assert!(!matching_anchor_event(
+            &receipt,
+            registry,
+            issuer,
+            &digest,
+            &"0".repeat(64)
+        ));
         assert!(!matching_anchor_event(
             &json!({"logs":[]}),
             registry,
             issuer,
-            &digest
+            &digest,
+            &"0".repeat(64)
         ));
+    }
+    #[test]
+    fn receipt_must_bind_transaction_issuer_block_and_superseded_digest() {
+        let registry = "0x1234567890abcdef1234567890abcdef12345678";
+        let issuer = "0x234567890abcdef1234567890abcdef123456789";
+        let hash = format!("0x{}", "12".repeat(32));
+        let block = format!("0x{}", "34".repeat(32));
+        let digest = "ab".repeat(32);
+        let prior = "cd".repeat(32);
+        let signature = format!(
+            "0x{}",
+            hex::encode(Keccak256::digest(b"Anchored(bytes32,address,bytes32)"))
+        );
+        let tx = json!({"hash":hash, "from":issuer,"to":registry,"blockHash":block,"blockNumber":"0x20","input":calldata_with_supersedes(&digest, &prior).unwrap()});
+        let receipt = json!({"transactionHash":hash,"from":issuer,"to":registry,"status":"0x1","blockHash":block,"blockNumber":"0x20","logs":[{"address":registry,"removed":false,"topics":[signature,format!("0x{digest}"),format!("0x{}{}","0".repeat(24),&issuer[2..]),format!("0x{prior}")]}]});
+        let observed = validate_observation(&receipt, &tx, &hash, registry, &digest).unwrap();
+        assert_eq!(observed.1, format!("0x{prior}"));
+        for (field, value) in [
+            ("transactionHash", json!(format!("0x{}", "77".repeat(32)))),
+            ("blockHash", json!(format!("0x{}", "55".repeat(32)))),
+            ("from", json!(registry)),
+            ("status", json!("0x0")),
+        ] {
+            let mut bad = receipt.clone();
+            bad[field] = value;
+            assert!(
+                validate_observation(&bad, &tx, &hash, registry, &digest).is_none(),
+                "{field}"
+            );
+        }
+        let mut removed = receipt.clone();
+        removed["logs"][0]["removed"] = json!(true);
+        assert!(validate_observation(&removed, &tx, &hash, registry, &digest).is_none());
+        let mut wrong_prior = receipt.clone();
+        wrong_prior["logs"][0]["topics"][3] = json!(format!("0x{}", "00".repeat(32)));
+        assert!(validate_observation(&wrong_prior, &tx, &hash, registry, &digest).is_none());
     }
     #[test]
     fn local_report_bundle_is_stable_and_detects_tampering() {
@@ -502,6 +609,9 @@ mod tests {
             provider_slots: Arc::new(Semaphore::new(1)),
             registry: None,
             rpc: "https://api.avax-test.network/ext/bc/C/rpc".into(),
+            scout: None,
+            mongo: None,
+            research_mirror: None,
         };
         let company = Company {
             id: Uuid::new_v4().to_string(),

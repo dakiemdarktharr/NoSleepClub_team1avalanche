@@ -82,6 +82,29 @@ pub struct Source {
     pub url: String,
     pub description: String,
 }
+/// Durable local delivery work. Payload is an allowlisted, unverified research
+/// record; it never includes chat, job query, summary, user watch flag, or keys.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct ResearchOutboxItem {
+    pub id: String,
+    pub kind: String,
+    pub company_id: String,
+    pub entity_id: String,
+    pub version: String,
+    pub payload: Value,
+    pub attempts: i64,
+}
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ResearchOutboxCounts {
+    pub pending: i64,
+    pub delivered: i64,
+}
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ResearchBackfill {
+    pub scanned: usize,
+    pub enqueued: usize,
+    pub skipped: usize,
+}
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct Reservation {
     pub id: String,
@@ -198,10 +221,11 @@ impl Store {
         conn.busy_timeout(std::time::Duration::from_secs(5))?;
         let version: i64 = conn.pragma_query_value(None, "user_version", |r| r.get(0))?;
         ensure!(
-            version <= 1,
+            version <= 2,
             "database schema is newer than this application"
         );
-        conn.execute_batch("PRAGMA foreign_keys=ON; PRAGMA journal_mode=WAL;
+        conn.execute_batch("PRAGMA foreign_keys=ON; PRAGMA journal_mode=WAL;")?;
+        conn.execute_batch("BEGIN IMMEDIATE;
 CREATE TABLE IF NOT EXISTS companies(id TEXT PRIMARY KEY, tax_id TEXT UNIQUE, search_text TEXT NOT NULL, watched INTEGER NOT NULL, payload TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS evidence(id TEXT PRIMARY KEY, company_id TEXT NOT NULL REFERENCES companies(id), published_at TEXT, observed_at TEXT NOT NULL, payload TEXT NOT NULL);
 CREATE INDEX IF NOT EXISTS evidence_company ON evidence(company_id);
@@ -216,7 +240,9 @@ CREATE TABLE IF NOT EXISTS investigation_candidates(investigation_id TEXT NOT NU
 CREATE TABLE IF NOT EXISTS investigation_evidence(investigation_id TEXT NOT NULL REFERENCES investigations(id), evidence_id TEXT NOT NULL REFERENCES evidence(id), PRIMARY KEY(investigation_id,evidence_id));
 CREATE TABLE IF NOT EXISTS evidence_reviews(id INTEGER PRIMARY KEY AUTOINCREMENT, evidence_id TEXT NOT NULL REFERENCES evidence(id), decision TEXT NOT NULL CHECK(decision IN ('subject_confirmed','not_about_company')), reviewed_at TEXT NOT NULL);
 CREATE INDEX IF NOT EXISTS evidence_reviews_by_id ON evidence_reviews(evidence_id,id);
-PRAGMA user_version=1;")?;
+CREATE TABLE IF NOT EXISTS research_outbox(id TEXT PRIMARY KEY, kind TEXT NOT NULL CHECK(kind IN ('company','claim')), company_id TEXT NOT NULL, entity_id TEXT NOT NULL, version TEXT NOT NULL, payload TEXT NOT NULL, status TEXT NOT NULL CHECK(status IN ('pending','delivered')), attempts INTEGER NOT NULL DEFAULT 0 CHECK(attempts >= 0), created_at TEXT NOT NULL, delivered_at TEXT);
+CREATE INDEX IF NOT EXISTS research_outbox_pending ON research_outbox(status,attempts,created_at,id);
+PRAGMA user_version=2; COMMIT;")?;
         let store = Self {
             conn: Arc::new(Mutex::new(conn)),
         };
@@ -469,6 +495,11 @@ PRAGMA user_version=1;")?;
             "INSERT INTO evidence_reviews(evidence_id,decision,reviewed_at) VALUES(?1,?2,?3)",
             params![evidence_id, decision, now()],
         )?;
+        if decision == "not_about_company" {
+            // Pending suggestions are no longer eligible for delivery. Already
+            // delivered immutable Mongo versions are not retracted by this.
+            tx.execute("DELETE FROM research_outbox WHERE kind='claim' AND company_id=?1 AND entity_id=?2 AND status='pending'", params![item.company_id,evidence_id])?;
+        }
         tx.commit()?;
         Ok(())
     }
@@ -532,6 +563,9 @@ PRAGMA user_version=1;")?;
         }
         for company in companies {
             write_company(&tx, company)?;
+            if let Some(payload) = public_company_payload(company) {
+                enqueue_research_outbox(&tx, "company", &company.id, &company.id, payload)?;
+            }
             if job.company_id.is_none() {
                 tx.execute("INSERT OR IGNORE INTO investigation_candidates(investigation_id,company_id) VALUES(?1,?2)",params![id,company.id])?;
             }
@@ -542,6 +576,9 @@ PRAGMA user_version=1;")?;
                 "new evidence must be reviewed by the user"
             );
             write_evidence(&tx, item)?;
+            if let Some(payload) = public_claim_payload(item) {
+                enqueue_research_outbox(&tx, "claim", &item.company_id, &item.id, payload)?;
+            }
             tx.execute(
                 "INSERT INTO investigation_evidence(investigation_id,evidence_id) VALUES(?1,?2)",
                 params![id, item.id],
@@ -839,6 +876,170 @@ PRAGMA user_version=1;")?;
         tx.commit()?;
         Ok(snapshot)
     }
+    /// Reads bounded pending work without deleting it. Failed items remain
+    /// pending and are rotated behind lower-attempt work for fairness.
+    pub fn research_outbox_pending(&self, limit: u32) -> Result<Vec<ResearchOutboxItem>> {
+        ensure!((1..=1000).contains(&limit), "invalid research outbox limit");
+        let conn = lock(&self.conn)?;
+        let mut st = conn.prepare("SELECT id,kind,company_id,entity_id,version,payload,attempts FROM research_outbox WHERE status='pending' ORDER BY attempts,created_at,id LIMIT ?1")?;
+        let rows = st.query_map([limit], |r| {
+            Ok((
+                r.get::<_, String>(0)?,
+                r.get::<_, String>(1)?,
+                r.get::<_, String>(2)?,
+                r.get::<_, String>(3)?,
+                r.get::<_, String>(4)?,
+                r.get::<_, String>(5)?,
+                r.get::<_, i64>(6)?,
+            ))
+        })?;
+        rows.map(|row| {
+            let (id, kind, company_id, entity_id, version, payload, attempts) = row?;
+            Ok(ResearchOutboxItem {
+                id,
+                kind,
+                company_id,
+                entity_id,
+                version,
+                payload: decode(payload)?,
+                attempts,
+            })
+        })
+        .collect()
+    }
+    /// Called only after the corresponding Mongo write has returned majority ack.
+    pub fn research_outbox_delivered(&self, id: &str) -> Result<()> {
+        let conn = lock(&self.conn)?;
+        let changed = conn.execute("UPDATE research_outbox SET status='delivered',delivered_at=?1 WHERE id=?2 AND status='pending'", params![now(),id])?;
+        if changed == 0 {
+            let state: Option<String> = conn
+                .query_row(
+                    "SELECT status FROM research_outbox WHERE id=?1",
+                    [id],
+                    |r| r.get(0),
+                )
+                .optional()?;
+            ensure!(
+                state.as_deref() == Some("delivered"),
+                "research outbox item not found"
+            );
+        }
+        Ok(())
+    }
+    pub fn research_outbox_is_pending(&self, id: &str) -> Result<bool> {
+        let conn = lock(&self.conn)?;
+        Ok(conn.query_row(
+            "SELECT EXISTS(SELECT 1 FROM research_outbox WHERE id=?1 AND status='pending')",
+            [id],
+            |r| r.get(0),
+        )?)
+    }
+    pub fn research_outbox_failed(&self, id: &str) -> Result<()> {
+        let conn = lock(&self.conn)?;
+        let changed = conn.execute(
+            "UPDATE research_outbox SET attempts=attempts+1 WHERE id=?1 AND status='pending'",
+            [id],
+        )?;
+        ensure!(changed == 1, "research outbox item not pending");
+        Ok(())
+    }
+    pub fn research_outbox_counts(&self) -> Result<ResearchOutboxCounts> {
+        let conn = lock(&self.conn)?;
+        Ok(conn.query_row("SELECT COALESCE(SUM(status='pending'),0),COALESCE(SUM(status='delivered'),0) FROM research_outbox",[],|r|Ok(ResearchOutboxCounts {pending:r.get(0)?,delivered:r.get(1)?}))?)
+    }
+    /// Explicit idempotent backfill of current records linked to completed or
+    /// partial research jobs. This cannot reconstruct deleted prior versions.
+    /// It refuses oversized databases rather than silently returning a partial scan.
+    pub fn research_outbox_backfill(&self) -> Result<ResearchBackfill> {
+        const MAX_RECORDS: usize = 10_000;
+        let mut conn = lock(&self.conn)?;
+        let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let candidates: Vec<String> = {
+            let mut stmt=tx.prepare("SELECT DISTINCT c.payload FROM companies c JOIN investigation_candidates x ON x.company_id=c.id JOIN investigations j ON j.id=x.investigation_id WHERE j.status IN ('completed','partial') LIMIT 10001")?;
+            let rows = stmt.query_map([], |row| row.get(0))?;
+            rows.collect::<rusqlite::Result<_>>()?
+        };
+        let evidence: Vec<String> = {
+            let mut stmt=tx.prepare("SELECT DISTINCT e.payload FROM evidence e JOIN investigation_evidence x ON x.evidence_id=e.id JOIN investigations j ON j.id=x.investigation_id WHERE j.status IN ('completed','partial') LIMIT 10001")?;
+            let rows = stmt.query_map([], |row| row.get(0))?;
+            rows.collect::<rusqlite::Result<_>>()?
+        };
+        ensure!(
+            candidates.len() <= MAX_RECORDS && evidence.len() <= MAX_RECORDS,
+            "research backfill exceeds bounded scan; pagination required"
+        );
+        let before: i64 = tx.query_row("SELECT COUNT(*) FROM research_outbox", [], |r| r.get(0))?;
+        let mut skipped = 0;
+        for encoded in &candidates {
+            let c: Company = decode(encoded.clone())?;
+            if let Some(payload) = public_company_payload(&c) {
+                enqueue_research_outbox(&tx, "company", &c.id, &c.id, payload)?;
+            } else {
+                skipped += 1;
+            }
+        }
+        for encoded in &evidence {
+            let e: Evidence = decode(encoded.clone())?;
+            if let Some(payload) = public_claim_payload(&e) {
+                enqueue_research_outbox(&tx, "claim", &e.company_id, &e.id, payload)?;
+            } else {
+                skipped += 1;
+            }
+        }
+        let after: i64 = tx.query_row("SELECT COUNT(*) FROM research_outbox", [], |r| r.get(0))?;
+        tx.commit()?;
+        Ok(ResearchBackfill {
+            scanned: candidates.len() + evidence.len(),
+            enqueued: (after - before) as usize,
+            skipped,
+        })
+    }
+}
+
+/// Strip URL query/fragment, which can contain a user's search or access token.
+/// Reject user-info; the sanitized locator may not reproduce query-based pages.
+fn public_locator(raw: &str) -> Option<(String, bool)> {
+    let mut url = url::Url::parse(raw).ok()?;
+    if !matches!(url.scheme(), "http" | "https")
+        || !url.username().is_empty()
+        || url.password().is_some()
+        || url.host_str().is_none()
+    {
+        return None;
+    }
+    let stripped = url.query().is_some() || url.fragment().is_some();
+    url.set_query(None);
+    url.set_fragment(None);
+    Some((url.to_string(), stripped))
+}
+fn public_company_payload(company: &Company) -> Option<Value> {
+    let (locator, query_removed) = public_locator(company.source_url.as_deref()?)?;
+    Some(
+        serde_json::json!({"company_id":company.id,"name":company.name,"tax_id":company.tax_id,"ticker":company.ticker,"sector":company.sector,"location":company.location,"source_locator":locator,"source_query_removed":query_removed,"identity_status":"candidate_unverified","provenance_status":"model_suggested_not_independently_verified"}),
+    )
+}
+fn public_claim_payload(e: &Evidence) -> Option<Value> {
+    if !matches!(e.status.as_str(), "unverified" | "subject_confirmed") {
+        return None;
+    }
+    let (locator, query_removed) = public_locator(&e.url)?;
+    Some(
+        serde_json::json!({"claim_id":e.id,"company_id":e.company_id,"title":e.title,"source_locator":locator,"source_query_removed":query_removed,"publisher":e.publisher,"claim":e.claim,"dimension":e.dimension,"status":"unverified","published_at":e.published_at,"observed_at":e.observed_at,"provenance_status":"model_suggested_not_independently_verified"}),
+    )
+}
+fn enqueue_research_outbox(
+    tx: &rusqlite::Transaction<'_>,
+    kind: &str,
+    company_id: &str,
+    entity_id: &str,
+    payload: Value,
+) -> Result<()> {
+    let encoded = serde_json::to_string(&payload)?;
+    let version = hex::encode(Sha256::digest(encoded.as_bytes()));
+    let framed = serde_json::to_vec(&(kind, company_id, entity_id, &version))?;
+    let id = hex::encode(Sha256::digest(framed));
+    tx.execute("INSERT OR IGNORE INTO research_outbox(id,kind,company_id,entity_id,version,payload,status,attempts,created_at) VALUES(?1,?2,?3,?4,?5,?6,'pending',0,?7)",params![id,kind,company_id,entity_id,version,encoded,now()])?;
+    Ok(())
 }
 fn budget_snapshot(conn: &Connection) -> Result<Budget> {
     let cap: i64 = conn
@@ -1016,6 +1217,123 @@ mod tests {
             created_at: "2026-03-01T00:00:00Z".into(),
             updated_at: "2026-03-01T00:00:00Z".into(),
         }
+    }
+    #[test]
+    fn research_outbox_migrates_v1_and_survives_restart() -> Result<()> {
+        let path = std::env::temp_dir().join(format!("lantern-outbox-{}.sqlite", Uuid::new_v4()));
+        {
+            let conn = Connection::open(&path)?;
+            conn.execute_batch("CREATE TABLE companies(id TEXT PRIMARY KEY,tax_id TEXT UNIQUE,search_text TEXT NOT NULL,watched INTEGER NOT NULL,payload TEXT NOT NULL); PRAGMA user_version=1;")?;
+        }
+        let pending_id;
+        {
+            let store = Store::open(&path)?;
+            let mut job = investigation();
+            job.query = "private-user-query".into();
+            store.create_investigation(&job)?;
+            store.transition_investigation("i", "running", "collecting", "start")?;
+            store.transition_investigation("i", "verifying", "verify", "checking")?;
+            let mut c = company("c", "0123456789");
+            c.source_url = Some("https://example.org/profile?token=private-secret".into());
+            c.description = Some("private-description".into());
+            c.watched = true;
+            store.finalize_import("i", &[c], &[], "private-summary", &[], "completed")?;
+            let rows = store.research_outbox_pending(10)?;
+            assert_eq!(rows.len(), 1);
+            let payload = serde_json::to_string(&rows[0].payload)?;
+            assert!(!payload.contains("private-"));
+            assert_eq!(rows[0].payload["source_query_removed"], true);
+            assert_eq!(rows[0].payload["identity_status"], "candidate_unverified");
+            pending_id = rows[0].id.clone();
+            store.research_outbox_failed(&pending_id)?;
+        }
+        {
+            let store = Store::open(&path)?;
+            let rows = store.research_outbox_pending(10)?;
+            assert_eq!(rows.len(), 1);
+            assert_eq!(rows[0].id, pending_id);
+            assert_eq!(rows[0].attempts, 1);
+            store.research_outbox_delivered(&pending_id)?;
+            store.research_outbox_delivered(&pending_id)?;
+            assert_eq!(
+                store.research_outbox_counts()?,
+                ResearchOutboxCounts {
+                    pending: 0,
+                    delivered: 1
+                }
+            );
+        }
+        std::fs::remove_file(path)?;
+        Ok(())
+    }
+    #[test]
+    fn research_outbox_rolls_back_invalid_import_and_cancelled_job() -> Result<()> {
+        let store = Store::memory()?;
+        store.save_company(&company("c", "0123456789"))?;
+        let mut job = investigation();
+        job.company_id = Some("c".into());
+        store.create_investigation(&job)?;
+        store.transition_investigation("i", "running", "collecting", "start")?;
+        store.transition_investigation("i", "verifying", "verify", "checking")?;
+        let mut c = company("c", "0123456789");
+        c.source_url = Some("https://example.org/profile".into());
+        let mut bad = evidence("e", None, "2026-01-01");
+        bad.status = "unverified".into();
+        bad.url = "javascript:alert(1)".into();
+        assert!(
+            store
+                .finalize_import("i", &[c.clone()], &[bad], "", &[], "completed")
+                .is_err()
+        );
+        assert_eq!(store.research_outbox_counts()?.pending, 0);
+        store.transition_investigation("i", "cancelled", "cancelled", "user")?;
+        assert!(
+            store
+                .finalize_import("i", &[c], &[], "", &[], "completed")
+                .is_err()
+        );
+        assert_eq!(store.research_outbox_counts()?.pending, 0);
+        Ok(())
+    }
+    #[test]
+    fn evidence_mirror_keeps_unverified_claim_and_strips_secret_url_query() -> Result<()> {
+        let store = Store::memory()?;
+        store.save_company(&company("c", "0123456789"))?;
+        let mut job = investigation();
+        job.company_id = Some("c".into());
+        store.create_investigation(&job)?;
+        store.transition_investigation("i", "running", "collecting", "start")?;
+        store.transition_investigation("i", "verifying", "verify", "checking")?;
+        let mut e = evidence("e", None, "2026-01-01");
+        e.status = "unverified".into();
+        e.url = "https://example.org/p?credential=hidden".into();
+        store.finalize_import("i", &[], &[e], "", &[], "completed")?;
+        let pending = store.research_outbox_pending(10)?;
+        assert_eq!(pending.len(), 1);
+        assert_eq!(pending[0].kind, "claim");
+        assert_eq!(pending[0].payload["status"], "unverified");
+        assert!(!pending[0].payload.to_string().contains("credential"));
+        // Simulate data imported before the outbox migration, then backfill twice.
+        lock(&store.conn)?.execute("DELETE FROM research_outbox", [])?;
+        let first = store.research_outbox_backfill()?;
+        assert_eq!(first.scanned, 1);
+        assert_eq!(first.enqueued, 1);
+        assert_eq!(first.skipped, 0);
+        let again = store.research_outbox_backfill()?;
+        assert_eq!(again.scanned, 1);
+        assert_eq!(again.enqueued, 0);
+        assert_eq!(store.research_outbox_counts()?.pending, 1);
+        store.review_evidence("e", "not_about_company")?;
+        assert_eq!(store.research_outbox_counts()?.pending, 0);
+        let excluded = store.research_outbox_backfill()?;
+        assert_eq!(excluded.enqueued, 0);
+        assert_eq!(excluded.skipped, 1);
+        let mut rejected = evidence("other", None, "2026-01-01");
+        rejected.status = "rejected".into();
+        assert!(public_claim_payload(&rejected).is_none());
+        rejected.status = "unknown_future_status".into();
+        assert!(public_claim_payload(&rejected).is_none());
+        Ok(())
     }
     fn evidence(id: &str, pub_at: Option<&str>, seen: &str) -> Evidence {
         Evidence {
