@@ -441,6 +441,9 @@ impl MongoRuntime {
 #[cfg(test)]
 mod tests {
     use super::*;
+    fn fixture_uri(scheme: &str, user: &str, password: &str, host: &str, path: &str) -> String {
+        format!("{scheme}://{user}:{password}@{host}{path}")
+    }
     #[test]
     fn routing_is_stable_and_balanced() {
         let t = routing();
@@ -451,25 +454,35 @@ mod tests {
     }
     #[test]
     fn endpoint_fingerprint_excludes_password_and_options() {
-        let a = endpoint_hash(
-            "mongodb+srv://alice:secret@EXAMPLE.mongodb.net/lantern?retryWrites=true",
-        )
+        let a = endpoint_hash(&fixture_uri(
+            "mongodb+srv",
+            "fixture-a",
+            "fixture-pass-a",
+            "EXAMPLE.invalid",
+            "/lantern?retryWrites=true",
+        ))
         .unwrap();
-        let b = endpoint_hash("mongodb+srv://bob:other@example.mongodb.net/other").unwrap();
+        let b = endpoint_hash(&fixture_uri(
+            "mongodb+srv",
+            "fixture-b",
+            "fixture-pass-b",
+            "example.invalid",
+            "/other",
+        ))
+        .unwrap();
         assert_eq!(a, b);
-        assert_ne!(
-            a,
-            endpoint_hash("mongodb+srv://example2.mongodb.net/").unwrap()
-        );
-        assert!(!a.contains("secret"));
+        assert_ne!(a, endpoint_hash("mongodb+srv://example2.invalid/").unwrap());
+        assert!(!a.contains("fixture-pass-a"));
         assert!(endpoint_hash("https://example.com").is_err());
     }
     #[test]
     fn pin_rejects_swapped_clusters_and_never_contains_secrets() {
         let pin = RoutingPin {
             routing: routing(),
-            endpoint_a: endpoint_hash("mongodb+srv://u:p@a.example/").unwrap(),
-            endpoint_b: endpoint_hash("mongodb+srv://u:p@b.example/").unwrap(),
+            endpoint_a: endpoint_hash(&fixture_uri("mongodb+srv", "u", "p", "a.invalid", "/"))
+                .unwrap(),
+            endpoint_b: endpoint_hash(&fixture_uri("mongodb+srv", "u", "p", "b.invalid", "/"))
+                .unwrap(),
         };
         let text = serde_json::to_string(&pin).unwrap();
         assert!(!text.contains("u:p"));
@@ -491,8 +504,22 @@ mod tests {
         fs::create_dir(&dir).unwrap();
         let pin = RoutingPin {
             routing: routing(),
-            endpoint_a: endpoint_hash("mongodb://u:secret@a.example").unwrap(),
-            endpoint_b: endpoint_hash("mongodb://u:secret@b.example").unwrap(),
+            endpoint_a: endpoint_hash(&fixture_uri(
+                "mongodb",
+                "u",
+                "fixture-secret",
+                "a.invalid",
+                "",
+            ))
+            .unwrap(),
+            endpoint_b: endpoint_hash(&fixture_uri(
+                "mongodb",
+                "u",
+                "fixture-secret",
+                "b.invalid",
+                "",
+            ))
+            .unwrap(),
         };
         assert_eq!(
             load_or_create_pin(&dir, false, &pin),
