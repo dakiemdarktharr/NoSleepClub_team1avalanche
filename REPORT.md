@@ -4,7 +4,7 @@
 
 **NoSleepClub · Team1 Avalanche · ngày 01/11/2026**
 
-MIRA là tên làm việc cho trợ lý thoại tiếng Việt, phân biệt với NORA. LANTERN VN là tên làm việc cho terminal thông tin và thẩm định doanh nghiệp Việt Nam. Chưa kiểm tra nhãn hiệu. Báo cáo này phục vụ quyết định trước khi code; repo chưa có ứng dụng, hợp đồng dữ liệu, mô hình rủi ro đã kiểm định hoặc smart contract đã triển khai.
+MIRA là tên làm việc cho trợ lý thoại tiếng Việt, phân biệt với NORA. LANTERN VN là tên làm việc cho terminal thông tin và thẩm định doanh nghiệp Việt Nam. Chưa kiểm tra nhãn hiệu. Báo cáo này được viết trước khi có code; xem [README](README.md) và [kế hoạch tiếp theo](docs/NEXT_DEVELOPMENT_PLAN.md) để biết trạng thái hiện tại.
 
 ## 1. Phương án tôi đề xuất
 
@@ -18,7 +18,7 @@ Sản phẩm ban đầu nên phục vụ chuyên viên thẩm định doanh nghi
 
 ## 2. Đọc đề và đọc `zalo_hacks`
 
-[Team1 UniHack](https://team1vn.xyz/) cho phép ý tưởng riêng hoặc dự án có sẵn, cần một phần thật chạy trên Avalanche. Hạn nộp là **23:59 ngày 21/11/2026, giờ Việt Nam**, không phải ngày chung kết 30/11. Nhóm tối đa ba người; cần repo, slides và video demo 2–3 phút mở xem được. Tích hợp Avalanche chiếm 25/100 điểm. [Đối chiếu đề và kế hoạch đáp ứng](docs/brief-nora-review.md) ghi chi tiết; chưa gửi bài hoặc đăng ký thay người dùng.
+[Team1 UniHack](https://team1vn.xyz/) cho phép ý tưởng riêng hoặc dự án có sẵn, cần một phần thật chạy trên Avalanche. Team1 ghi hạn **23:59 ngày 21/11/2026**, trong khi [Builder Hub](https://build.avax.network/events/596c0b2d-63aa-4cf0-a0ad-a7e34ddbfdc0) ghi cổng đóng **05:59 ngày 25/11/2026**, cùng giờ Việt Nam, và nơi nộp khác; cần xác nhận ban tổ chức và dùng mốc sớm làm mục tiêu nội bộ. Nhóm tối đa ba người; Team1 yêu cầu repo, slides và video demo 2–3 phút mở xem được. Tích hợp Avalanche chiếm 25/100 điểm theo Team1. [Đối chiếu đề và kế hoạch đáp ứng](docs/brief-nora-review.md) ghi chi tiết; chưa gửi bài hoặc đăng ký thay người dùng.
 
 Đã đọc project `zalo_hacks` tại workspace NORA cục bộ và đối chiếu [repo NORA](https://github.com/dakiemdarktharr/NoSleepClub_zalo_hacks). Tài liệu cập nhật mô tả Rust native Windows, PTT, ASR/TTS local, goal/checkpoint, broker có kiểu dữ liệu, quyền và receipt verification. Một số tài liệu kiến trúc cũ vẫn nói phương án trước đây nên không được dùng làm trạng thái hiện tại. Chưa chạy lại test hoặc benchmark.
 

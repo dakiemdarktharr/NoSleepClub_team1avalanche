@@ -27,7 +27,7 @@ Giữ API key trong file riêng ngoài GitHub. Khi chọn cấu hình NORA, mode
 - Xuất/kiểm chứng phiên bản báo cáo và chuẩn bị giao dịch Fuji. Muốn neo thật cần registry đã triển khai và ví; hash/receipt không chứng minh nội dung đúng hoặc danh tính tổ chức. Ngày quá khứ chưa có snapshot đầy đủ: hồ sơ và tác vụ được ẩn, không tạo điều tra mới cho ngày đó.
 - Ngân sách cục bộ mặc định $5 với khoản đặt giữ trước request; giữ chỗ không phải hóa đơn. Có thể đổi giới hạn và đối chiếu từng khoản bằng màn Cài đặt.
 
-Chưa có feed được cấp phép phủ toàn quốc, giám sát watchlist tự động, mô hình dự báo được kiểm định, xác thực nhiều người dùng hay chứng nhận production. Xem [roadmap chi tiết từng màn hình](docs/DEVELOPMENT_ROADMAP.md) và [ADR Rust web/PWA](docs/adr/0001-rust-web-pwa.md).
+Chưa có feed được cấp phép phủ toàn quốc, giám sát watchlist tự động, mô hình dự báo được kiểm định, xác thực nhiều người dùng hay chứng nhận production. Xem [kế hoạch phát triển tiếp theo](docs/NEXT_DEVELOPMENT_PLAN.md), [roadmap từng màn hình](docs/DEVELOPMENT_ROADMAP.md) và [ADR Rust web/PWA](docs/adr/0001-rust-web-pwa.md).
 
 TTS mặc định cần được chuyển sang workflow mới trước **06/01/2027** theo [lịch ngừng model của OpenAI](https://developers.openai.com/api/docs/deprecations); xem [kết quả kiểm thử và giới hạn](docs/VALIDATION.md).
 
@@ -40,6 +40,7 @@ Kiểm thử: `cargo test --workspace --locked`; khi server đang chạy, `./scr
 - [Đánh giá, chi phí và lịch thực hiện](docs/evaluation-roadmap.md): tiêu chí nghiệm thu, thử nghiệm, ngân sách giả định và mốc 21/11.
 - [Đọc đề và đối chiếu NORA](docs/brief-nora-review.md): yêu cầu UniHack và phần có thể kế thừa từ `zalo_hacks`.
 - [Nghiên cứu học thuật](research/academic-evidence.md), [Bloomberg và nguồn dữ liệu](research/bloomberg-data.md), [pháp lý và khả thi](research/legal-feasibility.md).
+- [Self-improvement và agent theo dõi liên tục](research/self-improvement-and-continuous-monitoring.md), cùng [tài liệu RIS](research/self-improving-agents-2026.ris).
 - [Phương pháp, giới hạn công cụ và nguồn kiến trúc](research/methodology.md).
 - [Thư mục tài liệu RIS cho Zotero](research/papers.ris): nhập bằng File → Import; xem ghi chú metadata trong từng bản ghi. Chưa đồng bộ vào tài khoản Zotero.
 
@@ -51,10 +52,10 @@ Không tìm thấy tin xấu **không** có nghĩa là ít rủi ro. Bằng ch�
 
 ## Đề thi và phạm vi Avalanche
 
-[Team1 Vietnam UniHack](https://team1vn.xyz/) chốt nộp **23:59 ngày 21/11/2026, giờ Việt Nam**, demo cuối ngày 30/11. Hướng đề xuất là một registry kiểm chứng phiên bản báo cáo trên **Avalanche Fuji**, dữ liệu chi tiết giữ ngoài chuỗi; hash chứng minh tính toàn vẹn của phiên bản, không chứng minh doanh nghiệp an toàn. Chưa triển khai hoặc gửi bài dự thi trong phiên nghiên cứu này.
+[Team1 Vietnam UniHack](https://team1vn.xyz/) ghi hạn nộp **23:59 ngày 21/11/2026**, trong khi [Avalanche Builder Hub](https://build.avax.network/events/596c0b2d-63aa-4cf0-a0ad-a7e34ddbfdc0) ghi cổng đóng **05:59 ngày 25/11/2026**, cùng giờ Việt Nam; thông tin nơi nộp cũng khác nhau. Dùng 21/11 làm mốc nội bộ và xác nhận lại với ban tổ chức. Hướng đề xuất là registry kiểm chứng phiên bản báo cáo trên **Avalanche Fuji**, dữ liệu chi tiết giữ ngoài chuỗi; hash chứng minh tính toàn vẹn, không chứng minh doanh nghiệp an toàn. Chưa triển khai contract hoặc gửi bài dự thi.
 
 ## Nguồn gốc nghiên cứu
 
-Đã đọc tài liệu và cấu trúc workspace của [NoSleepClub_zalo_hacks / NORA](https://github.com/dakiemdarktharr/NoSleepClub_zalo_hacks). Ba agent chuyên môn áp dụng `agency-agents`, dùng đúng **gpt-6.1-terra / xhigh** theo yêu cầu. CoChat được dùng để tìm và đọc bài; nguồn chính thức dùng để đối chiếu. Consensus đã được gọi nhưng hết hạn mức; Zotero không có plugin khả dụng trong phiên. Không coi hai dịch vụ này là đã hoàn thành nghiên cứu hay đồng bộ tài liệu.
+Đã đọc tài liệu và cấu trúc workspace của [NoSleepClub_zalo_hacks / NORA](https://github.com/dakiemdarktharr/NoSleepClub_zalo_hacks). Ba agent chuyên môn áp dụng `agency-agents`, dùng đúng **gpt-6.1-terra / xhigh** theo yêu cầu. CoChat được dùng để tìm và đọc bài; nguồn chính thức dùng để đối chiếu. Consensus đã được gọi nhưng hết hạn mức. Plugin Zotero đã được kiểm tra nhưng chưa truy cập được profile/API cục bộ; các file RIS chưa được đồng bộ vào thư viện.
 
 Repo chứa mã nguồn, tài liệu gốc, liên kết và metadata nghiên cứu. Không chứa dữ liệu doanh nghiệp thu thập hàng loạt, PDF có bản quyền, giọng nói cá nhân, model weights hoặc credentials. Mã/tài liệu gốc theo [MIT](LICENSE); xem [thông báo bên thứ ba](THIRD_PARTY_NOTICES.md). Việc repo public không cấp quyền sử dụng dữ liệu hay thương hiệu của bên thứ ba.

@@ -68,7 +68,7 @@ Chiến lược scale: danh mục/lookup có quyền + incremental refresh, watc
 
 ## 6. Lịch làm tới hạn nộp
 
-Nguồn deadline: [Team1 UniHack](https://team1vn.xyz/). Chia việc dưới đây cho nhóm tối đa ba người; tên vai trò là công việc, không yêu cầu thêm nhân sự.
+Mốc nội bộ 21/11 theo [Team1 UniHack](https://team1vn.xyz/); [Builder Hub](https://build.avax.network/events/596c0b2d-63aa-4cf0-a0ad-a7e34ddbfdc0) hiện ghi mốc và nơi nộp khác, cần xác nhận với ban tổ chức. Chia việc dưới đây cho nhóm tối đa ba người; tên vai trò là công việc, không yêu cầu thêm nhân sự.
 
 | Thời gian, giờ Việt Nam | Việc ưu tiên | Kết quả review được / điều kiện qua |
 |---|---|---|

@@ -1,0 +1,174 @@
+TY  - CONF
+TI  - GEPA: Reflective Prompt Evolution Can Outperform Reinforcement Learning
+AU  - Agrawal, Lakshya A
+AU  - Tan, Shangyin
+AU  - Soylu, Dilara
+AU  - Ziems, Noah
+AU  - Khare, Rishi
+AU  - Opsahl-Ong, Krista
+AU  - Singhvi, Arnav
+AU  - Shandilya, Herumb
+AU  - Ryan, Michael J
+AU  - Jiang, Meng
+AU  - Potts, Christopher
+AU  - Sen, Koushik
+AU  - Dimakis, Alex
+AU  - Stoica, Ion
+AU  - Klein, Dan
+AU  - Zaharia, Matei
+AU  - Khattab, Omar
+PY  - 2026
+T2  - International Conference on Learning Representations 2026
+UR  - https://proceedings.iclr.cc/paper_files/paper/2026/hash/0e9e708b6f48e14fd0ac29e167413f76-Abstract-Conference.html
+N1  - Peer-reviewed conference paper. Preprint: https://arxiv.org/abs/2507.19457
+ER  -
+
+TY  - CONF
+TI  - ReasoningBank: Scaling Agent Self-Evolving with Reasoning Memory
+AU  - Ouyang, Siru
+AU  - Yan, Jun
+AU  - Hsu, I-Hung
+AU  - Chen, Yanfei
+AU  - Jiang, Ke
+AU  - Wang, Zifeng
+AU  - Han, Rujun
+AU  - Le, Long T.
+AU  - Daruki, Samira
+AU  - Tang, Xiangru
+AU  - Tirumalashetty, Vishy
+AU  - Lee, George
+AU  - Rofouei, Mahsan
+AU  - Lin, Hangfei
+AU  - Han, Jiawei
+AU  - Lee, Chen-Yu
+AU  - Pfister, Tomas
+PY  - 2026
+T2  - International Conference on Learning Representations 2026
+UR  - https://openreview.net/pdf?id=jL7fwchScm
+N1  - Peer-reviewed conference paper. Preprint: https://arxiv.org/abs/2509.25140
+ER  -
+
+TY  - CONF
+TI  - Darwin Godel Machine: Open-Ended Evolution of Self-Improving Agents
+AU  - Zhang, Jenny
+AU  - Hu, Shengran
+AU  - Lu, Cong
+AU  - Lange, Robert
+AU  - Clune, Jeff
+PY  - 2026
+T2  - International Conference on Learning Representations 2026
+UR  - https://openreview.net/pdf?id=pUpzQZTvGY
+N1  - Peer-reviewed conference paper. Preprint: https://arxiv.org/abs/2505.22954
+ER  -
+
+TY  - RPRT
+TI  - Batching the Reflective Optimization Loop: Parallel Proposals Make GEPA Faster and Better
+AU  - Zhang, Jialin
+AU  - Agrawal, Lakshya A
+AU  - Tan, Shangyin
+AU  - Lee, Donghyun
+AU  - Erdogan, Lutfi Eren
+AU  - Klein, Dan
+AU  - Sen, Koushik
+AU  - Dimakis, Alex
+AU  - Zaharia, Matei
+PY  - 2026
+DA  - 2026/10/27
+PB  - arXiv
+DO  - 10.48550/arXiv.2610.36774
+UR  - https://arxiv.org/abs/2610.36774
+N1  - Preprint; listed by its authors as a NeurIPS 2026 workshop paper.
+ER  -
+
+TY  - RPRT
+TI  - Recursive self-improvement of AI research agents
+AU  - Srikanth, Dhruv
+AU  - Zhao, Bingchen
+AU  - Xu, Dixing
+AU  - Wu, Yuxiang
+AU  - Jiang, Zhengyao
+PY  - 2026
+DA  - 2026/09/22
+PB  - arXiv
+DO  - 10.48550/arXiv.2609.26457
+UR  - https://arxiv.org/abs/2609.26457
+N1  - Preprint; no peer review established in this research session.
+ER  -
+
+TY  - RPRT
+TI  - Reflective Prompt Optimization of a Deep-Research Agent: A Topic-Disjoint, Multi-Seed Protocol for Measuring Transferable Gains and Prompt-Level Overfitting
+AU  - Lumer, Elias
+AU  - Sen, Sahil
+AU  - Subbiah, Vamse Kumar
+AU  - Paul, Kevin
+PY  - 2026
+DA  - 2026/10/08
+PB  - arXiv
+DO  - 10.48550/arXiv.2610.12601
+UR  - https://arxiv.org/abs/2610.12601
+N1  - Preprint; no peer review established in this research session.
+ER  -
+
+TY  - RPRT
+TI  - Are Self-Evolving Agents Continual Learners?
+AU  - Chen, Xiaoyin
+AU  - Huang, Yizheng
+AU  - Xu, Yinglun
+AU  - Zhao, Ziyun
+AU  - McQuinn, Emmett
+AU  - Liu, Julie
+AU  - Yao, Hope
+PY  - 2026
+DA  - 2026/10/19
+PB  - arXiv
+DO  - 10.48550/arXiv.2610.25858
+UR  - https://arxiv.org/abs/2610.25858
+N1  - Preprint; no peer review established in this research session.
+ER  -
+
+TY  - RPRT
+TI  - Search-Time Contamination in Deep Research Agents: Measuring Performance Inflation in Public Benchmark Evaluation
+AU  - Wang, Yongjie
+AU  - Zhang, Xinyue
+AU  - Yao, Kunhong
+AU  - Zeng, Zhiwei
+AU  - Song, Kaisong
+AU  - Lin, Jun
+AU  - Shen, Zhiqi
+PY  - 2026
+DA  - 2026/06/03
+PB  - arXiv
+DO  - 10.48550/arXiv.2606.05241
+UR  - https://arxiv.org/abs/2606.05241
+N1  - Preprint; no peer review established in this research session.
+ER  -
+
+TY  - RPRT
+TI  - PAST-Bench: Benchmarking the Foundations of Recursive Self-Improvement in Personal Agents
+AU  - Xue, Shuhan
+AU  - Ding, Zixin
+AU  - Shen, Yichen
+AU  - Wang, Yinjie
+AU  - Yin, Zhenfei
+AU  - Wu, Yingcheng
+AU  - Chen, Yuxin
+AU  - Wang, Mengdi
+AU  - Yang, Ling
+PY  - 2026
+PB  - arXiv
+DO  - 10.48550/arXiv.2608.04003
+UR  - https://arxiv.org/abs/2608.04003
+N1  - Preprint; no peer review established in this research session.
+ER  -
+
+TY  - RPRT
+TI  - Auditing the Product, Not the Recursion: The Evaluation Evidence Behind Recursive Self-Improvement Claims
+AU  - Chen, Zihan
+AU  - Zhu, Di
+AU  - Zheng, Lei Nico
+PY  - 2026
+PB  - arXiv
+DO  - 10.48550/arXiv.2610.27610
+UR  - https://arxiv.org/abs/2610.27610
+N1  - Preprint; no peer review established in this research session.
+ER  -

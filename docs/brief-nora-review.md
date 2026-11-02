@@ -4,7 +4,7 @@ Ngày đọc: 01/11/2026, múi giờ Asia/Saigon. URL người dùng gửi có d
 
 ## Đề yêu cầu gì
 
-Trang công khai cho phép ý tưởng riêng và mang dự án có sẵn, kể cả web2, miễn có một phần thực sự chạy trên Avalanche: L1 riêng, Fuji hoặc C-Chain mainnet. Nhóm tối đa ba người; không bắt buộc chọn một trong 20 đề gợi ý. Lịch hiển thị 02–30/11/2026 nhưng **hạn nộp là 23:59 thứ Bảy 21/11**, công bố finalist 23/11, chung kết 30/11. Thời gian còn lại để nộp tính từ ngày nghiên cứu là khoảng 20 ngày, không phải 30 ngày phát triển trọn vẹn.
+Trang Team1 cho phép ý tưởng riêng và mang dự án có sẵn, kể cả web2, miễn có một phần thực sự chạy trên Avalanche: L1 riêng, Fuji hoặc C-Chain mainnet. Nhóm tối đa ba người; không bắt buộc chọn một trong 20 đề gợi ý. Theo Team1, hạn là **23:59 ngày 21/11** và finalist công bố 23/11. Kiểm tra ngày 02/11 thấy [Builder Hub](https://build.avax.network/events/596c0b2d-63aa-4cf0-a0ad-a7e34ddbfdc0) ghi cổng đóng **05:59 ngày 25/11**, giờ Việt Nam, cùng thông tin nơi nộp và finalist khác. Cần xác nhận ban tổ chức; dùng 21/11 làm mốc nội bộ thận trọng.
 
 Hồ sơ nộp gồm GitHub repo, slides mở xem và video demo 2–3 phút. Repo có thể public hoặc private với quyền cho giám khảo được chỉ định; người dùng đã chọn public. Link không mở được có thể bị loại. Live app và contract/explorer có ô riêng trong biểu mẫu; việc có ô optional không xóa yêu cầu sản phẩm chạy trên Avalanche. Không tự nộp biểu mẫu hay liên hệ ban tổ chức.
 
