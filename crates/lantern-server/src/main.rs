@@ -1,5 +1,9 @@
 //! Single-user loopback web/PWA host. Secrets stay on the Rust side.
+mod analysis_api;
 mod chain;
+mod evolution;
+#[cfg(test)]
+mod interaction_tests;
 mod mongo_runtime;
 mod pipeline;
 mod research_mirror;
@@ -39,6 +43,7 @@ pub(crate) struct App {
     scout: Option<Arc<scout_runtime::ScoutRuntime>>,
     mongo: Option<Arc<mongo_runtime::MongoRuntime>>,
     research_mirror: Option<Arc<research_mirror::ResearchMirror>>,
+    evolution: evolution::EvolutionStore,
 }
 
 #[derive(Debug)]
@@ -110,6 +115,8 @@ struct ViewQuery {
     ids: Option<String>,
     q: Option<String>,
     as_of: Option<String>,
+    page: Option<u32>,
+    snapshot: Option<String>,
 }
 fn snapshot(app: &App, q: &ViewQuery) -> Result<Value> {
     let as_of = valid_date(q.as_of.as_deref())
@@ -118,21 +125,38 @@ fn snapshot(app: &App, q: &ViewQuery) -> Result<Value> {
     // Company profiles and job state are not yet bitemporal. Do not present
     // today's values as though they were known at an earlier date.
     let historical_unavailable = as_of < today();
+    let route = checked_view(q);
+    ensure!(
+        q.ids
+            .as_deref()
+            .unwrap_or("")
+            .split(',')
+            .filter(|v| !v.is_empty())
+            .count()
+            <= 4,
+        "Chỉ so sánh tối đa bốn doanh nghiệp"
+    );
+    let query = q.q.as_deref().unwrap_or("").trim();
+    ensure!(
+        query.chars().count() <= 1000,
+        "Cụm tìm kiếm vượt 1.000 ký tự"
+    );
+    let watched = route == "watchlist";
+    let filter = query;
+    let total = app.store.company_count(filter, watched)?;
+    let page_number = q
+        .page
+        .unwrap_or(0)
+        .min((total.saturating_sub(1) / 100) as u32);
     let mut companies = if historical_unavailable {
         vec![]
     } else {
-        app.store.list_companies("", 300, 0)?
+        app.store
+            .company_page(filter, watched, 100, page_number.saturating_mul(100))?
     };
     if !historical_unavailable {
         let mut seen: std::collections::HashSet<String> =
             companies.iter().map(|c| c.id.clone()).collect();
-        if let Some(query) = q.q.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
-            for company in app.store.list_companies(query, 200, 0)? {
-                if seen.insert(company.id.clone()) {
-                    companies.push(company);
-                }
-            }
-        }
         for id in q
             .selected
             .iter()
@@ -149,7 +173,10 @@ fn snapshot(app: &App, q: &ViewQuery) -> Result<Value> {
         }
     }
     let mut evidence = Vec::new();
-    for company in &companies {
+    for company in companies
+        .iter()
+        .filter(|c| q.selected.as_deref() == Some(c.id.as_str()))
+    {
         evidence.extend(app.store.list_evidence(&company.id, Some(&as_of))?);
     }
     evidence.truncate(1000);
@@ -193,6 +220,19 @@ fn snapshot(app: &App, q: &ViewQuery) -> Result<Value> {
                 && matches!(j.status.as_str(), "completed" | "partial")
         }) {
             linked_candidates.extend(app.store.candidate_ids(&job.id)?);
+        }
+    }
+    // AI lookup requests can describe a sector rather than a company name. Keep
+    // linked candidates visible even when their names do not contain the query.
+    if route == "companies" && !historical_unavailable {
+        let mut linked: Vec<_> = linked_candidates.iter().collect();
+        linked.sort();
+        for id in linked.into_iter().take(100) {
+            if !companies.iter().any(|c| &c.id == id)
+                && let Some(company) = app.store.get_company(id)?
+            {
+                companies.push(company);
+            }
         }
     }
     let filtered: Vec<&Company> = companies
@@ -251,18 +291,94 @@ fn snapshot(app: &App, q: &ViewQuery) -> Result<Value> {
     if let Some(mirror) = &app.research_mirror {
         storage["research_mirror"] = mirror.status().unwrap_or(Value::Null);
     }
+    let mut risk_cohort = Vec::new();
+    if route == "risk" && q.snapshot.is_none() && !historical_unavailable {
+        for offset in (0..lantern_core::risk::MAX_RISK_COHORT).step_by(200) {
+            let batch = app.store.company_page(query, false, 200, offset as u32)?;
+            let count = batch.len();
+            risk_cohort.extend(batch.into_iter().map(|c| c.id));
+            if count < 200 {
+                break;
+            }
+        }
+    }
+    let mut risk = if route == "risk" && q.snapshot.is_some() {
+        serde_json::to_value(
+            app.store
+                .risk_get_snapshot(q.snapshot.as_deref().unwrap_or(""))?
+                .context("Không tìm thấy phiên bản sàng lọc này")?,
+        )?
+    } else if matches!(route, "risk" | "dossier") && !historical_unavailable {
+        let cohort: Vec<String> = if route == "risk" {
+            risk_cohort.clone()
+        } else {
+            companies
+                .iter()
+                .filter(|c| q.selected.as_deref() == Some(c.id.as_str()))
+                .map(|c| c.id.clone())
+                .collect()
+        };
+        if cohort.is_empty() {
+            Value::Null
+        } else {
+            serde_json::to_value(app.store.risk_preview(&cohort, &now())?)?
+        }
+    } else {
+        Value::Null
+    };
+    let (view_total, view_page) = if route == "risk" {
+        if let Some(results) = risk["results"].as_array_mut() {
+            let count = results.len();
+            let page = q
+                .page
+                .unwrap_or(0)
+                .min((count.saturating_sub(1) / 100) as u32);
+            *results = results
+                .iter()
+                .skip(page as usize * 100)
+                .take(100)
+                .cloned()
+                .collect();
+            (count as u64, page)
+        } else {
+            (0, 0)
+        }
+    } else {
+        (total, page_number)
+    };
+    let risk_journal = if route == "dossier" && !historical_unavailable {
+        q.selected
+            .as_deref()
+            .map(|id| app.store.risk_journal(id))
+            .transpose()?
+            .unwrap_or_default()
+    } else {
+        vec![]
+    };
+    let evolution = if route == "evolution" {
+        serde_json::to_value(app.evolution.snapshot()?)?
+    } else {
+        Value::Null
+    };
+    let risk_snapshots = if route == "risk" {
+        app.store.risk_list_snapshots(30)?
+    } else {
+        vec![]
+    };
     Ok(
         json!({"companies":companies,"search_results":filtered,"search_query":q.q.as_deref().unwrap_or(""),
         "selected_ids":ids,"investigations":investigations,"evidence":evidence,
         "messages":app.store.messages(40)?,"events":events,"sources":app.store.list_sources()?,
         "config":config,"reservations":reservations,"as_of":as_of,"temporal_mode":"system_known",
-        "historical_unavailable":historical_unavailable,"report_ready_ids":report_ready_ids,"scout":scout,"storage":storage}),
+        "historical_unavailable":historical_unavailable,"report_ready_ids":report_ready_ids,"scout":scout,"storage":storage,
+        "risk":risk,"risk_journal":risk_journal,"risk_snapshots":risk_snapshots,"risk_cohort":risk_cohort,"evolution":evolution,
+        "catalogue":{"total":view_total,"available":total,"truncated":route=="risk" && q.snapshot.is_none() && total>view_total,"page":view_page,"page_size":100,"has_next":(u64::from(view_page)+1)*100<view_total}}),
     )
 }
 fn checked_view(q: &ViewQuery) -> &str {
     match q.view.as_deref().unwrap_or("overview") {
         v @ ("overview" | "companies" | "dossier" | "compare" | "watchlist" | "jobs"
-        | "sources" | "settings") => v,
+        | "sources" | "settings" | "risk" | "evolution") => v,
         _ => "overview",
     }
 }
@@ -867,10 +983,43 @@ fn routes(app: App) -> Router {
         .route("/", get(page))
         .route("/ui", get(fragment))
         .route("/api/state", get(state))
+        .route("/api/revision", get(analysis_api::revision))
+        .route("/api/evidence", post(analysis_api::add_evidence))
+        .route("/api/risk/assessments", post(analysis_api::assess))
+        .route("/api/risk/identity", post(analysis_api::identity))
+        .route(
+            "/api/risk/assessments/{id}/retract",
+            post(analysis_api::retract),
+        )
+        .route("/api/risk/snapshots", post(analysis_api::save_snapshot))
+        .route("/api/risk/snapshots/{id}", get(analysis_api::get_snapshot))
+        .route("/api/evolution", get(analysis_api::evolution_state))
+        .route(
+            "/api/evolution/evaluate",
+            post(analysis_api::evolution_tick),
+        )
+        .route("/api/evolution/promote", post(analysis_api::promote))
+        .route("/api/evolution/rollback", post(analysis_api::rollback))
+        .route(
+            "/api/evolution/runs/{id}/feedback",
+            post(analysis_api::feedback),
+        )
         .route("/api/health", get(health))
         .route("/api/scout/run", post(scout_run))
         .route("/api/scout/enabled", post(scout_enabled))
         .route("/api/scout/resume-after-review", post(scout_resume))
+        .route(
+            "/api/scout/sources/{id}/enabled",
+            post(analysis_api::source_enabled),
+        )
+        .route(
+            "/api/scout/sources/{id}/run",
+            post(analysis_api::source_run),
+        )
+        .route(
+            "/api/scout/sources/{id}/resume-after-review",
+            post(analysis_api::source_resume),
+        )
         .route("/api/storage/health", get(storage_health))
         .route("/api/storage/candidates", get(storage_candidates))
         .route("/health", get(health))
@@ -1102,11 +1251,13 @@ async fn main() -> Result<()> {
         store.clone(),
         mongo.clone(),
         scout_enabled,
+        Some(setting(&settings, "LANTERN_WIKIDATA_CONTACT", "")).filter(|s| !s.is_empty()),
     )?));
     let research_mirror = Some(Arc::new(research_mirror::ResearchMirror::new(
         store.clone(),
         mongo.clone(),
     )));
+    let evolution = evolution::EvolutionStore::open(data_dir.join("evolution.db"))?;
     let app = App {
         store,
         connector: client,
@@ -1127,6 +1278,7 @@ async fn main() -> Result<()> {
         scout,
         mongo,
         research_mirror,
+        evolution,
     };
     let rpc = url::Url::parse(&app.rpc)?;
     ensure!(
@@ -1246,6 +1398,7 @@ mod tests {
             scout: None,
             mongo: None,
             research_mirror: None,
+            evolution: evolution::EvolutionStore::open(":memory:").unwrap(),
         }
     }
     #[tokio::test]

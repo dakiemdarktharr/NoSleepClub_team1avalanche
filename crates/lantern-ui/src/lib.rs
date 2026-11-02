@@ -2,6 +2,7 @@
 //! missing data is represented explicitly rather than inferred.
 use maud::{DOCTYPE, Markup, html};
 use serde_json::Value;
+mod analysis;
 
 pub const CSS: &str = include_str!("../assets/app.css");
 pub const JS: &str = include_str!("../assets/app.js");
@@ -111,7 +112,7 @@ pub fn render_page(snapshot: &Value, route: &str, selected: Option<&str>) -> Mar
         ""
     };
     html! {
-        (DOCTYPE) html lang="vi" { head { meta charset="utf-8"; meta name="viewport" content="width=device-width, initial-scale=1"; meta name="theme-color" content="#0b1522"; meta name="description" content="Không gian nghiên cứu doanh nghiệp cùng MIRA."; link rel="icon" href="/assets/icon.svg" type="image/svg+xml"; link rel="manifest" href="/manifest.webmanifest"; link rel="stylesheet" href="/assets/app.css?v=6"; title { "LANTERN VN · MIRA" } }
+        (DOCTYPE) html lang="vi" { head { meta charset="utf-8"; meta name="viewport" content="width=device-width, initial-scale=1"; meta name="theme-color" content="#0b1522"; meta name="description" content="Không gian nghiên cứu doanh nghiệp cùng MIRA."; link rel="icon" href="/assets/icon.svg" type="image/svg+xml"; link rel="manifest" href="/manifest.webmanifest"; link rel="stylesheet" href="/assets/app.css?v=8"; title { "LANTERN VN · MIRA" } }
         body { a class="skip-link" href="#main-content" { "Chuyển tới nội dung" }
             header class="topbar" {
                 button type="button" class="mobile-menu icon-button" data-action="menu" aria-label="Mở điều hướng" aria-expanded="false" { "☰" }
@@ -127,6 +128,8 @@ pub fn render_page(snapshot: &Value, route: &str, selected: Option<&str>) -> Mar
                         (nav_link("overview", route, "◫", "Tổng quan"))
                         (nav_link("companies", route, "⌕", "Doanh nghiệp"))
                         (nav_link("compare", route, "⇄", "So sánh"))
+                        (nav_link("risk", route, "≡", "Rủi ro"))
+                        (nav_link("evolution", route, "↻", "Cải thiện"))
                         (nav_link("watchlist", route, "☆", "Theo dõi"))
                         (nav_link("jobs", route, "◷", "Tác vụ"))
                         (nav_link("sources", route, "▤", "Nguồn"))
@@ -142,7 +145,7 @@ pub fn render_page(snapshot: &Value, route: &str, selected: Option<&str>) -> Mar
                 div class="dialog-section" { h3 { "Neo trên Avalanche Fuji" } p { "Bước này tùy chọn và cần ví của bạn. Cam kết cục bộ chưa được neo; chỉ receipt đúng contract và digest mới xác nhận giao dịch. Chuỗi không chứng minh nội dung là sự thật." } button type="button" class="button subtle" data-action="chain-prepare" { "Chuẩn bị neo Fuji" } div id="chain-prepared" hidden { p class="setting-note" { "Mạng: Fuji (chain ID 43113). Contract:" } code id="chain-contract" class="digest-line" {} p { "Bạn sẽ kiểm tra dữ liệu và phí trong ví trước khi xác nhận." } button type="button" class="button subtle" data-action="chain-connect" { "Kết nối ví và chọn Fuji" } } div id="chain-connected" hidden { p class="setting-note" { "Ví: " code id="chain-account" {} } button type="button" class="button primary" data-action="chain-send" { "Xác nhận gửi giao dịch" } } label for="transaction-hash" { "Transaction hash để kiểm tra receipt" } input id="transaction-hash" type="text" autocomplete="off" placeholder="0x…"; button type="button" class="button subtle" data-action="chain-retry" { "Kiểm tra lại receipt" } p id="chain-result" class="dialog-result" role="status" aria-live="polite" {} }
                 div class="dialog-actions" { button type="button" class="button subtle" data-action="report-close" { "Đóng" } }
             } }
-            script src="/assets/app.js?v=6" defer {} }
+            script src="/assets/app.js?v=8" defer {} }
         }
     }
 }
@@ -159,8 +162,11 @@ pub fn render_workspace(snapshot: &Value, route: &str, selected: Option<&str>) -
             "jobs" => (jobs(snapshot)),
             "sources" => (sources(snapshot)),
             "settings" => (settings(snapshot)),
+            "risk" => (analysis::risk(snapshot)),
+            "evolution" => (analysis::evolution(snapshot)),
             _ => (overview(snapshot)),
         }
+        @if matches!(route,"watchlist"|"compare") { (analysis::pagination(snapshot,route)) }
     } } (mira(snapshot)) }
 }
 
@@ -213,9 +219,9 @@ fn monitoring_status(snapshot: &Value) -> Markup {
     };
     html! {
         section class="monitor-panel panel" aria-labelledby="monitor-title" {
-            div class="monitor-heading" { h2 id="monitor-title" { "Theo dõi dữ liệu" } div { button type="button" class="button subtle small" data-action="scout-toggle" data-enabled=(scout_enabled) disabled[!scout_configured] { @if scout_enabled { "Dừng lấy mới" } @else { "Bật Scout" } } button type="button" class="button subtle small" data-action="scout-run" disabled[!(scout_configured && scout_enabled)] { "Chạy Scout" } @if scout.get("origin_suspended").and_then(Value::as_bool).unwrap_or(false) { button type="button" class="button subtle small" data-action="scout-resume" disabled[!scout_enabled] { "Tiếp tục sau rà soát" } } } }
+            div class="monitor-heading" { h2 id="monitor-title" { "Theo dõi dữ liệu" } }
             div class="monitor-grid" {
-                div { span { "Scout" } strong { @if scout_configured { (scout_status(field(scout, &["status"]))) } @else { "Chưa cấu hình" } }
+                div { span { "Scout · GLEIF" } strong { @if scout_configured { (scout_status(field(scout, &["status"]))) } @else { "Chưa cấu hình" } }
                     small { "Lần kiểm tra: " (text_or(field(scout, &["last_run_at"]), "Chưa có")) }
                     small { "Dự kiến: " (text_or(field(scout, &["next_run_at"]), "Chưa có")) }
                     small { "Độ phủ: " (text_or(field(scout, &["coverage"]), "Chưa xác minh")) }
@@ -227,7 +233,13 @@ fn monitoring_status(snapshot: &Value) -> Markup {
                     @for cluster in clusters { small { (text_or(field(cluster, &["name"]), "Cluster chưa có tên")) " · " (text_or(field(cluster, &["status"]), "Chưa xác minh")) @if !field(cluster, &["region"]).is_empty() { " · " (field(cluster, &["region"])) } } }
                 }
             }
-            @if !sources.is_empty() { div class="monitor-sources" { @for source in sources { div { strong { (text_or(field(source, &["name"]), "Nguồn chưa có tên")) } } } } }
+            @if !sources.is_empty() { div class="monitor-sources" { @for source in sources { @let enabled=source["enabled"].as_bool().unwrap_or(scout_enabled); div { strong { (text_or(field(source, &["name"]), "Nguồn chưa có tên")) } span { (scout_status(field(source,&["status"]))) " · trang " (source["cursor"].as_u64().unwrap_or(0)+1) } }
+                div class="source-controls" { button type="button" class="button subtle small" data-action="source-toggle" data-id=(field(source,&["id"])) data-enabled=(enabled) { @if enabled { "Dừng nguồn" } @else { "Bật nguồn" } }
+                    button type="button" class="button subtle small" data-action="source-run" data-id=(field(source,&["id"])) disabled[!enabled || field(source,&["status"])=="running"] { "Kiểm tra nguồn" }
+                    @if field(source,&["status"])=="needs_review" { button type="button" class="button subtle small" data-action="source-resume" data-id=(field(source,&["id"])) { "Tiếp tục sau rà soát" } }
+                }
+                details { summary { "Phạm vi nguồn" } p { (field(source,&["coverage"])) } p { "Lần kiểm tra: " (text_or(field(source,&["last_checked_at"]),"Chưa có")) } }
+            } } }
         }
     }
 }
@@ -253,6 +265,7 @@ fn companies(snapshot: &Value) -> Markup {
         });
     html! { (section_head("Danh mục", "Doanh nghiệp", "Tìm đúng pháp nhân trước khi bắt đầu thẩm định."))
         section class="panel full-panel" { div class="panel-head" { div { h3 { "Kết quả tìm kiếm" } } @if !query.is_empty() && !pending { button type="button" class="button subtle small" data-action="search-web" data-query=(query) { "Tìm bằng AI" } } }
+        (analysis::pagination(snapshot,"companies"))
         @if pending { div class="search-pending" role="status" { span class="status-dot" {} span { "Đang tìm, " a href="/?view=jobs" data-view="jobs" { "xem Tác vụ" } } } }
         @if results.is_empty() && !pending { div class="empty large" { div class="empty-icon" { "⌕" } div { h3 { "Chưa có kết quả" } p { "Kết quả phụ thuộc nguồn đã cấu hình." } button class="button primary" type="button" data-action="focus-search" { "Tìm doanh nghiệp" } } } } @else if !results.is_empty() { (company_rows(results, false)) } }
     }
@@ -267,6 +280,7 @@ fn dossier(snapshot: &Value, selected: Option<&str>) -> Markup {
         div class="dossier-heading" { div class="company-monogram large-monogram" aria-hidden="true" { (name.chars().next().unwrap_or('D').to_uppercase()) } div class="dossier-title" { p class="context-label" { "Hồ sơ pháp nhân" } h1 { (name) } p { @if tax.is_empty() { "Mã số thuế chưa được xác minh" } @else { "MST " (tax) } "  ·  " (identity_label(field(c, &["identity_status", "status", "state"]))) } } @if !cid.is_empty() { button type="button" class="button subtle" data-action="watch" data-id=(cid) data-watched=(c.get("watched").and_then(Value::as_bool).unwrap_or(false)) { @if c.get("watched").and_then(Value::as_bool).unwrap_or(false) { "★ Đang theo dõi" } @else { "☆ Theo dõi" } } } }
         section class="panel company-details" { div class="panel-head" { div { h3 { "Thông tin pháp nhân" }  } @let url = field(c, &["source_url"]); @if url.starts_with("https://") || url.starts_with("http://") { a href=(url) target="_blank" rel="noopener noreferrer" class="text-link" { "Mở nguồn ↗" } } } div class="company-detail-grid" { div { span { "Lĩnh vực" } strong { (text_or(field(c, &["sector"]), "Chưa có")) } } div { span { "Địa phương" } strong { (text_or(field(c, &["location"]), "Chưa có")) } } div { span { "Mã giao dịch" } strong { (text_or(field(c, &["ticker"]), "Chưa có")) } } @let website = field(c, &["website"]); div { span { "Trang doanh nghiệp" } @if website.starts_with("https://") || website.starts_with("http://") { a href=(website) target="_blank" rel="noopener noreferrer" { "Mở trang ↗" } } @else { strong { "Chưa có" } } } } @if !field(c, &["description"]).is_empty() { p class="company-description" { (field(c, &["description"])) } } }
         section class="panel research-prompt" { div { h3 { "Bắt đầu một cuộc điều tra" }  } @if !cid.is_empty() { form data-form="investigation" class="investigate-form" { input type="hidden" name="company_id" value=(cid); label class="sr-only" for="investigate-query" { "Câu hỏi điều tra" } input id="investigate-query" name="query" placeholder="Ví dụ: Kiểm tra tình trạng pháp lý" required; button type="submit" class="button primary" { "Giao MIRA" } } } }
+        (analysis::dossier(snapshot,cid))
         div class="dossier-grid" { section class="panel" { div class="panel-head" { div { h3 { "Bằng chứng" }  } (badge(&format!("{} mục", items(snapshot, "evidence").iter().filter(|e| field(e, &["company_id"]) == cid && field(e, &["status"]) != "not_about_company").count()))) } (evidence_rows(snapshot, cid)) }
         section class="panel" { div class="panel-head" { div { h3 { "Diễn tiến nghiên cứu" }  } } (event_rows(snapshot, cid)) }
         section class="panel span-two" { div class="panel-head" { div { h3 { "Các chiều cần xem xét" } p { "Số mục không phải đánh giá an toàn hoặc rủi ro." } } } div class="dimension-grid" { @for (name, caption, aliases) in [("Pháp lý", "Trạng thái và sự kiện", &["legal", "pháp lý"][..]), ("Tài chính", "Báo cáo và chỉ tiêu", &["financial", "finance", "tài chính"][..]), ("Hoạt động", "Thông tin công bố", &["operations", "operational", "hoạt động"][..]), ("Quan hệ", "Liên kết có bằng chứng", &["relationship", "relationships", "quan hệ"][..])] { @let count = items(snapshot, "evidence").iter().filter(|e| field(e, &["company_id"]) == cid && field(e, &["status"]) != "not_about_company" && aliases.contains(&field(e, &["dimension"]))).count(); div { strong { (name) } span { (caption) } small { @if count == 0 { "Chưa có bằng chứng" } @else { (count) " mục cần xem xét" } } } } } }
@@ -455,24 +469,24 @@ mod tests {
         let page = render_workspace(&json!({}), "overview", None).into_string();
         assert!(page.contains("Chưa cấu hình"));
         assert!(page.contains("Chưa xác minh"));
-        assert!(page.contains("data-action=\"scout-run\" disabled"));
+        assert!(!page.contains("data-action=\"source-run\""));
         let disabled = render_workspace(
-            &json!({"scout":{"configured":true,"enabled":false}}),
+            &json!({"scout":{"configured":true,"enabled":false,"sources":[{"id":"test-source","name":"Test source","enabled":false,"status":"disabled"}]}}),
             "overview",
             None,
         )
         .into_string();
-        assert!(disabled.contains("data-action=\"scout-run\" disabled"));
+        assert!(disabled.contains("data-action=\"source-run\" data-id=\"test-source\" disabled"));
     }
 
     #[test]
     fn monitoring_shows_only_snapshot_sources_clusters_and_coverage() {
         let snapshot = json!({
-            "scout":{"configured":true,"enabled":true,"status":"Đang chờ", "coverage":"2 nguồn", "last_run_at":"2026-11-02", "sources":[{"name":"Nguồn A", "status":"Khả dụng", "last_checked_at":"2026-11-02", "coverage":"Giới hạn"}]},
+            "scout":{"configured":true,"enabled":true,"status":"scheduled", "coverage":"2 nguồn", "last_run_at":"2026-11-02", "sources":[{"id":"test-source","name":"Nguồn A", "enabled":true,"status":"scheduled", "last_checked_at":"2026-11-02", "coverage":"Giới hạn"}]},
             "storage":{"configured":true,"mode":"MongoDB Atlas", "status":"Chưa xác minh", "clusters":[{"name":"A <script>","status":"Đang kiểm tra","region":"ap-southeast-1"},{"name":"B","status":"Không khả dụng"}]}
         });
         let page = render_workspace(&snapshot, "overview", None).into_string();
-        assert!(page.contains("data-action=\"scout-run\">"));
+        assert!(page.contains("data-action=\"source-run\" data-id=\"test-source\">"));
         for expected in [
             "2 nguồn",
             "Nguồn A",

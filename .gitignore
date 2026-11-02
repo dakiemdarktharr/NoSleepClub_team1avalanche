@@ -2,6 +2,7 @@
 /.cache/
 /.tools/
 /.artifacts/
+/.playwright-mcp/
 **/.artifacts/
 /data/
 /.env

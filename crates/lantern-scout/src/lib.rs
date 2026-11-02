@@ -115,6 +115,11 @@ pub struct Lease {
     pub job_id: String,
     pub fencing_token: String,
     pub policy: SourcePolicy,
+    /// Store-generated request URL for an immutable source policy.
+    #[serde(default)]
+    pub request_url: Option<String>,
+    #[serde(default)]
+    pub user_agent_contact: Option<String>,
     pub attempts: u32,
     pub previous_etag: Option<String>,
     pub previous_last_modified: Option<String>,
@@ -297,11 +302,9 @@ fn retry(lease: &Lease, code: Option<u16>, reason: &str, minimum_seconds: u64) -
             },
             code,
             reason,
-            if exhausted {
-                None
-            } else {
-                Some(next_date(Utc::now(), delay))
-            },
+            // Even when exhausted, keep the earliest permitted time for operator review.
+            // Exhaustion still requires explicit review; this is not an automatic schedule.
+            Some(next_date(Utc::now(), delay)),
         ),
         content: None,
     }
@@ -360,7 +363,13 @@ pub async fn fetch(lease: &Lease) -> Observation {
 }
 /// `fixture` is only passed by unit tests: DNS/HTTP override is compiled out of production.
 async fn fetch_inner(lease: &Lease, fixture: Option<SocketAddr>) -> Observation {
-    let mut url = match check_url(&lease.policy, &lease.policy.source_url) {
+    let mut url = match check_url(
+        &lease.policy,
+        lease
+            .request_url
+            .as_deref()
+            .unwrap_or(&lease.policy.source_url),
+    ) {
         Ok(u) => u,
         Err(_) => {
             return Observation {
@@ -405,7 +414,32 @@ async fn fetch_inner(lease: &Lease, fixture: Option<SocketAddr>) -> Observation 
             .redirect(reqwest::redirect::Policy::none())
             .resolve_to_addrs(&host, &addrs)
             .timeout(StdDuration::from_secs(lease.policy.timeout_seconds))
-            .user_agent("LANTERN-Scout/0.1 (source-policy opt-in)")
+            .user_agent(if host == "query.wikidata.org" {
+                match lease.user_agent_contact.as_deref() {
+                    Some(contact)
+                        if !contact.is_empty()
+                            && contact.len() <= 200
+                            && !contact.chars().any(char::is_control) =>
+                    {
+                        format!("LANTERN-ScoutBot/0.1 ({contact})")
+                    }
+                    _ => {
+                        return Observation {
+                            record: record(
+                                lease,
+                                Change::Blocked,
+                                None,
+                                "wikidata_contact_required",
+                                None,
+                            ),
+                            content: None,
+                        };
+                    }
+                }
+            } else {
+                "LANTERN-Scout/0.1 (https://github.com/dakiemdarktharr/NoSleepClub_team1avalanche)"
+                    .into()
+            })
             .build()
         {
             Ok(c) => c,
@@ -775,6 +809,80 @@ pub fn parse_gleif_vn_json(bytes: &[u8]) -> Result<Vec<GleifCandidate>> {
     }
     Ok(result)
 }
+
+/// An unverified, community-maintained Wikidata item, kept in its own namespace.
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct WikidataCandidate {
+    pub qid: String,
+    pub name: String,
+    pub website: Option<String>,
+    pub ticker: Option<String>,
+    pub source_url: String,
+}
+/// Parse only the fixed Scout query's SPARQL JSON results. Never follow returned URLs.
+pub fn parse_wikidata_vn_json(bytes: &[u8]) -> Result<Vec<WikidataCandidate>> {
+    ensure!(
+        bytes.len() <= 5 * 1024 * 1024,
+        "Wikidata response exceeds limit"
+    );
+    let root: serde_json::Value = serde_json::from_slice(bytes)?;
+    let rows = root
+        .pointer("/results/bindings")
+        .and_then(|v| v.as_array())
+        .context("missing SPARQL bindings")?;
+    ensure!(rows.len() <= 100, "too many Wikidata rows");
+    let mut result: Vec<WikidataCandidate> = Vec::new();
+    let mut seen = std::collections::HashSet::new();
+    for row in rows {
+        let value = |key: &str| {
+            row.get(key)
+                .and_then(|v| v.get("value"))
+                .and_then(|v| v.as_str())
+        };
+        let uri = value("item").context("missing item")?;
+        let qid = uri
+            .strip_prefix("http://www.wikidata.org/entity/")
+            .context("invalid item URI")?;
+        ensure!(
+            qid.starts_with('Q')
+                && qid.len() <= 20
+                && qid[1..].bytes().all(|b| b.is_ascii_digit())
+                && qid.len() > 1,
+            "invalid item id"
+        );
+        let name = value("name").context("missing name")?.trim();
+        ensure!(
+            !name.is_empty() && name.chars().count() <= 500 && !name.chars().any(char::is_control),
+            "invalid name"
+        );
+        if !seen.insert(qid.to_owned()) {
+            continue;
+        }
+        let website = value("website")
+            .and_then(|s| Url::parse(s).ok())
+            .filter(|u| {
+                matches!(u.scheme(), "https" | "http")
+                    && u.host_str().is_some()
+                    && u.username().is_empty()
+                    && u.password().is_none()
+                    && u.as_str().len() <= 2048
+            })
+            .map(|u| u.to_string());
+        let ticker = value("ticker")
+            .map(str::trim)
+            .filter(|s| !s.is_empty() && s.len() <= 32 && !s.chars().any(char::is_control))
+            .map(str::to_owned);
+        result.push(WikidataCandidate {
+            qid: qid.into(),
+            name: name.into(),
+            website,
+            ticker,
+            source_url: format!("https://www.wikidata.org/wiki/{qid}"),
+        });
+    }
+    Ok(result)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -786,6 +894,8 @@ mod tests {
         Lease {
             job_id: "job".into(),
             fencing_token: "token".into(),
+            request_url: None,
+            user_agent_contact: None,
             policy: SourcePolicy {
                 source_id: "sample".into(),
                 source_url: "https://source.example/path".into(),
@@ -816,6 +926,24 @@ mod tests {
             request
         });
         (addr, task)
+    }
+    #[test]
+    fn exhausted_rate_limit_retains_review_cooldown() {
+        let mut l = lease();
+        l.attempts = l.policy.max_attempts - 1;
+        let before = Utc::now();
+        let result = retry(&l, Some(429), "rate_limited", 7200);
+        assert_eq!(result.record.change, Change::Exhausted);
+        assert!(result.record.next_due.unwrap() >= before + Duration::seconds(7200));
+    }
+    #[test]
+    fn wikidata_candidates_are_namespaced_deduplicated_and_urls_are_not_fetched() {
+        let data = br#"{"results":{"bindings":[{"item":{"value":"http://www.wikidata.org/entity/Q123"},"name":{"value":"Synthetic"},"website":{"value":"https://example.com"},"ticker":{"value":"ABC"}},{"item":{"value":"http://www.wikidata.org/entity/Q123"},"name":{"value":"Synthetic"}}]}}"#;
+        let items = parse_wikidata_vn_json(data).unwrap();
+        assert_eq!(items.len(), 1);
+        assert_eq!(items[0].source_url, "https://www.wikidata.org/wiki/Q123");
+        assert_eq!(items[0].ticker.as_deref(), Some("ABC"));
+        assert!(parse_wikidata_vn_json(br#"{"results":{"bindings":[{"item":{"value":"http://evil.example/Q1"},"name":{"value":"X"}}]}}"#).is_err());
     }
     #[test]
     fn default_denies_and_url_checks_are_exact() {

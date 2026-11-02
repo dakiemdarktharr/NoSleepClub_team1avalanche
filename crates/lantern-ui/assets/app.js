@@ -9,6 +9,23 @@
   let renderedAsOf = initialAsOf;
   // These drafts live only in this tab's memory and are not sent until submitted.
   const investigationDrafts = new Map();
+  const formDrafts = new Map(), detailDrafts = new Map();
+  const formKey = (p, form) => [p.view,p.selected,form.dataset.form,form.querySelector('[name="entry_id"],[name="run_id"],[type="hidden"][name="confirmed"]')?.value || ''].join('|');
+  const rememberForms = p => {
+    workspace.querySelectorAll('.review-form,.feedback-form').forEach(form => {
+      formDrafts.set(formKey(p,form), [...form.elements].filter(e => e.name && e.type !== 'hidden').map(e => ({name:e.name,value:e.value,checked:e.checked})));
+    });
+    detailDrafts.set(p.view+'|'+p.selected,[...workspace.querySelectorAll('details[open]')].map(e=>e.querySelector('summary')?.textContent));
+    while(formDrafts.size>100) formDrafts.delete(formDrafts.keys().next().value);
+    while(detailDrafts.size>100) detailDrafts.delete(detailDrafts.keys().next().value);
+  };
+  const restoreForms = p => {
+    workspace.querySelectorAll('.review-form,.feedback-form').forEach(form => {
+      for (const saved of formDrafts.get(formKey(p,form)) || []) { const field=form.elements.namedItem(saved.name); if(field) { field.value=saved.value; if(field.type==='checkbox') field.checked=saved.checked; } }
+    });
+    const open=detailDrafts.get(p.view+'|'+p.selected)||[];
+    workspace.querySelectorAll('details').forEach(d=>{d.open=open.includes(d.querySelector('summary')?.textContent);});
+  };
   let comparisonDraft = null;
   const notify = (message, error = false) => {
     toast.textContent = message;
@@ -19,8 +36,9 @@
   };
   const current = () => {
     const p = new URLSearchParams(location.search);
-    return { view: p.get('view') || 'overview', selected: p.get('selected') || '', ids: p.get('ids') || '', q: p.get('q') || '', as_of: p.get('as_of') || '' };
+    return { view: p.get('view') || 'overview', selected: p.get('selected') || '', ids: p.get('ids') || '', q: p.get('q') || '', as_of: p.get('as_of') || '', page:p.get('page') || '', snapshot:p.get('snapshot') || '' };
   };
+  let renderedRoute = current();
   const setActive = view => document.querySelectorAll('.nav-link').forEach(a => {
     const active = a.dataset.view === view;
     a.classList.toggle('active', active);
@@ -33,14 +51,15 @@
     navigationController?.abort();
     const controller = new AbortController(); navigationController = controller;
     const params = new URLSearchParams({ view });
-    for (const [key, value] of Object.entries(options)) if (value) params.set(key, value);
+    for (const [key, value] of Object.entries(options)) if (value && key !== 'view') params.set(key, value);
     if (!params.has('as_of') && asOf()) params.set('as_of', asOf());
     try {
     const response = await fetch('/ui?' + params, { headers: { Accept: 'text/html' }, cache: 'no-store', signal:controller.signal });
     if (!response.ok) throw new Error('Không tải được màn hình. Vui lòng thử lại.');
     const markup = await response.text();
     if (sequence !== navigationSequence) return false;
-    const previous = current();
+    const previous = renderedRoute;
+    rememberForms(previous);
     const sameWorkspace = previous.view === view && previous.selected === (options.selected || '');
     const draft = document.getElementById('chat-input')?.value || '';
     const oldInvestigation = document.getElementById('investigate-query');
@@ -56,12 +75,14 @@
     const selection = focused && typeof focused.selectionStart === 'number' ? [focused.selectionStart, focused.selectionEnd] : null;
     const dockOpen = document.getElementById('mira-dock')?.classList.contains('open');
     workspace.innerHTML = markup;
+    restoreForms({view,selected:options.selected || ''});
     const nextInput = document.getElementById('chat-input'); if (nextInput) nextInput.value = draft;
     const nextInvestigation = document.getElementById('investigate-query'); if (nextInvestigation) nextInvestigation.value = investigationDraft;
     if (comparisonDraft) workspace.querySelectorAll('form[data-form="compare"] input[name="ids"]').forEach(input => { input.checked = comparisonDraft.includes(input.value); });
     if (dockOpen) document.getElementById('mira-dock')?.classList.add('open');
     if (push) history.pushState({}, '', '/?' + params);
     renderedAsOf = params.get('as_of') || initialAsOf;
+    renderedRoute = {view, ...options, as_of:renderedAsOf}; renderedRoute.view=view;
     setActive(view);
     document.getElementById('navigation')?.classList.remove('open');
     document.querySelector('.mobile-menu')?.setAttribute('aria-expanded', 'false');
@@ -74,7 +95,7 @@
     } catch (error) { if (error.name === 'AbortError') return false; throw error; }
     finally { if (userNavigationPending === sequence) userNavigationPending = 0; if (navigationController === controller) navigationController = null; }
   }
-  async function refresh() { const p = current(); return navigate(p.view, { selected: p.selected, ids: p.ids, q: p.q, as_of:asOf() }, false, true); }
+  async function refresh() { const p = current(); return navigate(p.view, { ...p, as_of:asOf() }, false, true); }
   async function call(path, body) {
     const response = await fetch(path, { method: 'POST', headers: { 'Content-Type': 'application/json', Accept: 'application/json' }, body: JSON.stringify(body) });
     let result; try { result = await response.json(); } catch (_) { throw new Error('Máy chủ trả về phản hồi không hợp lệ.'); }
@@ -94,7 +115,7 @@
   const asOf = () => (window.matchMedia('(max-width: 900px)').matches ? document.getElementById('as-of-mobile')?.value : document.getElementById('as-of')?.value) || null;
   for (const input of [document.getElementById('as-of'), document.getElementById('as-of-mobile')]) input?.addEventListener('change', () => {
     for (const other of [document.getElementById('as-of'), document.getElementById('as-of-mobile')]) if (other && other !== input) other.value = input.value;
-    const p = current(); navigate(p.view, { selected:p.selected, ids:p.ids, q:p.q, as_of:input.value }).catch(error => { for (const date of [document.getElementById('as-of'), document.getElementById('as-of-mobile')]) if (date) date.value = renderedAsOf; notify(error.message, true); });
+    const p = current(); navigate(p.view, { ...p, as_of:input.value, snapshot:'' }).catch(error => { for (const date of [document.getElementById('as-of'), document.getElementById('as-of-mobile')]) if (date) date.value = renderedAsOf; notify(error.message, true); });
   });
   const el = id => document.getElementById(id);
   function reportResult(id, text, error = false) { const node = el(id); if (node) { node.textContent = text; node.classList.toggle('error-text', error); } }
@@ -289,10 +310,11 @@
   }
   window.addEventListener('beforeinstallprompt', event => { event.preventDefault(); installEvent = event; refreshInstall(); });
   window.addEventListener('appinstalled', () => { installEvent = null; refreshInstall(); notify('Ứng dụng đã được cài đặt.'); });
-  window.addEventListener('popstate', () => { const p = current(); const dateValue = p.as_of || initialAsOf; for (const date of [el('as-of'), el('as-of-mobile')]) if (date) date.value = dateValue; navigate(p.view, { selected:p.selected, ids:p.ids, q:p.q, as_of:dateValue }, false).catch(error => notify(error.message, true)); });
+  window.addEventListener('popstate', () => { const p = current(); const dateValue = p.as_of || initialAsOf; for (const date of [el('as-of'), el('as-of-mobile')]) if (date) date.value = dateValue; navigate(p.view, { ...p, as_of:dateValue }, false).catch(error => notify(error.message, true)); });
   document.addEventListener('submit', async event => {
     const form = event.target.closest('form[data-form]'); if (!form) return;
     event.preventDefault();
+    if (busy) return;
     const button = form.querySelector('[type="submit"]'); if (button) button.disabled = true; busy = true;
     try {
       const data = new FormData(form);
@@ -319,7 +341,7 @@
           notify(result.message || 'Đã gửi yêu cầu nghiên cứu.'); await refresh(); break;
         }
         case 'compare': {
-          const ids = data.getAll('ids'); if (ids.length < 2) throw new Error('Chọn ít nhất hai doanh nghiệp.');
+          const ids = data.getAll('ids'); if (ids.length < 2 || ids.length > 4) throw new Error('Chọn từ hai đến bốn doanh nghiệp.');
           await navigate('compare', { ids:ids.join(',') }); break;
         }
         case 'reconcile-budget': {
@@ -335,6 +357,15 @@
           const result = await call('/api/budget/limit', { cents, confirmed:true });
           notify(result.message || 'Đã lưu giới hạn ngân sách.'); await refresh(); break;
         }
+        case 'evidence-add': case 'risk-assess': case 'risk-identity': case 'risk-retract': case 'evolution-feedback': {
+          let body=Object.fromEntries(data), path;
+          if(form.dataset.form==='evidence-add') { path='/api/evidence'; body.published_at=body.published_at || null; }
+          else if(form.dataset.form==='risk-assess') { path='/api/risk/assessments'; body.severity=Number(body.severity); body.dimension=form.elements.namedItem('evidence_id').selectedOptions[0]?.dataset.dimension; delete body.confirmed; }
+          else if(form.dataset.form==='risk-identity') { path='/api/risk/identity'; body.confirmed=body.confirmed==='true'; }
+          else if(form.dataset.form==='risk-retract') { path='/api/risk/assessments/'+encodeURIComponent(body.entry_id)+'/retract'; body={analyst:body.analyst,reason:body.rationale}; }
+          else { path='/api/evolution/runs/'+encodeURIComponent(body.run_id)+'/feedback'; body={feedback:body.feedback}; }
+          const result=await call(path,body); form.reset(); formDrafts.delete(formKey(current(),form)); notify(result.message || 'Đã lưu.'); await refresh(); break;
+        }
       }
     } catch (error) { notify(error.message || 'Không thể hoàn tất yêu cầu.', true); if (form.dataset.form === 'chat') { try { await refresh(); } catch (_) {} } }
     finally { busy = false; if (button?.isConnected) button.disabled = false; }
@@ -348,8 +379,16 @@
       return;
     }
     const action = target.dataset.action;
+    const exclusive=['watch','review-evidence','budget-bound','cancel-job','search-web','scout-run','scout-toggle','scout-resume','source-toggle','source-run','source-resume','risk-snapshot','evolution-evaluate','evolution-promote','evolution-rollback'].includes(action);
+    if(exclusive && busy) return;
+    if(exclusive) { busy=true; target.disabled=true; }
     try {
       switch (action) {
+        case 'page': { const p=current(); await navigate(target.dataset.targetView || p.view,{...p,page:target.dataset.page}); break; }
+        case 'risk-open': await navigate('risk',{snapshot:target.dataset.id}); break;
+        case 'risk-snapshot': { const company_ids=JSON.parse(el('risk-cohort')?.value || '[]'); const result=await call('/api/risk/snapshots',{company_ids,as_of:asOf()}); notify(result.message); await navigate('risk',{snapshot:result.snapshot.id}); break; }
+        case 'evolution-evaluate': case 'evolution-promote': case 'evolution-rollback': { const suffix=action.replace('evolution-',''); const result=await call('/api/evolution/'+suffix,{version:Number(target.dataset.version)}); notify(result.message); await refresh(); break; }
+        case 'source-toggle': case 'source-run': case 'source-resume': { const suffix=action==='source-toggle'?'enabled':action==='source-run'?'run':'resume-after-review'; const result=await call('/api/scout/sources/'+encodeURIComponent(target.dataset.id)+'/'+suffix,{enabled:target.dataset.enabled!=='true'}); notify(result.message || 'Đã cập nhật lịch nguồn.'); await refresh(); break; }
         case 'menu': { const el = document.getElementById('navigation'); el?.classList.toggle('open'); target.setAttribute('aria-expanded', String(el?.classList.contains('open'))); break; }
         case 'mira': document.getElementById('mira-dock')?.classList.add('open'); target.setAttribute('aria-expanded','true'); document.getElementById('chat-input')?.focus(); break;
         case 'mira-close': document.getElementById('mira-dock')?.classList.remove('open'); document.querySelector('.mira-mobile')?.setAttribute('aria-expanded','false'); document.querySelector('.mira-mobile')?.focus(); break;
@@ -380,13 +419,15 @@
         case 'device-speak': { if (!('speechSynthesis' in window)) throw new Error('Thiết bị không hỗ trợ đọc văn bản.'); stopAudio(); const utterance = new SpeechSynthesisUtterance(target.dataset.text || ''); utterance.lang = 'vi-VN'; window.speechSynthesis.speak(utterance); break; }
         case 'install': if (installEvent) { await installEvent.prompt(); await installEvent.userChoice; installEvent = null; refreshInstall(); } break;
       }
-    } catch (error) { notify(error.message || 'Không thể hoàn tất yêu cầu.', true); if (target.isConnected && !['install'].includes(action)) target.disabled = false; }
+    } catch (error) { notify(error.message || 'Không thể hoàn tất yêu cầu.', true); }
+    finally { if(exclusive) busy=false; if(target.isConnected && !['install'].includes(action)) target.disabled=false; }
   });
   document.addEventListener('keydown', event => {
     if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k') { event.preventDefault(); document.getElementById('command-input')?.focus(); }
     if (event.key === 'Escape') {
       stopAudio();
-      if (recordingSession?.recorder?.state === 'recording') recordingSession.recorder.stop();
+      const session = recordingSession;
+      if (session) { session.discard=true; session.controller.abort(); if (session.recorder?.state === 'recording') session.recorder.stop(); releaseSession(session); }
       if (document.getElementById('voice-consent')?.open) document.getElementById('voice-consent').close();
       if (document.getElementById('report-dialog')?.open) document.getElementById('report-dialog').close();
       document.getElementById('navigation')?.classList.remove('open');
@@ -404,11 +445,11 @@
     const startedAt = navigationSequence;
     try {
       const params = new URLSearchParams(); if (asOf()) params.set('as_of', asOf());
-      const response = await fetch('/api/state?' + params, { cache:'no-store' }); if (!response.ok) return;
+      const response = await fetch('/api/revision', { cache:'no-store' }); if (!response.ok) return;
       const state = await response.json();
       const activeForm = document.activeElement?.closest('form');
       if (startedAt !== navigationSequence || userNavigationPending || busy || recordingSession || el('report-dialog')?.open || el('voice-consent')?.open || (activeForm && workspace.contains(activeForm))) return;
-      const signature = JSON.stringify({ companies:state.companies, investigations:state.investigations, evidence:state.evidence, messages:state.messages, scout:state.scout, storage:state.storage });
+      const signature = state.revision;
       if ((pollSignature === null || signature !== pollSignature) && !(await refresh())) return;
       pollSignature = signature;
     } catch (_) { /* A later poll will retry; mutations are never retried automatically. */ }

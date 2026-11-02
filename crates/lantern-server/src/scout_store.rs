@@ -3,7 +3,8 @@
 use anyhow::{Context, Result, bail, ensure};
 use chrono::{DateTime, Utc};
 use lantern_scout::{
-    Change, FetchRecord, GleifCandidate, Lease, ScoutStore, SourcePolicy, parse_gleif_vn_json,
+    Change, FetchRecord, GleifCandidate, Lease, ScoutStore, SourcePolicy, WikidataCandidate,
+    parse_gleif_vn_json, parse_wikidata_vn_json,
 };
 use rusqlite::{Connection, OptionalExtension, Transaction, TransactionBehavior, params};
 use serde::{Deserialize, Serialize};
@@ -19,6 +20,7 @@ use uuid::Uuid;
 #[derive(Clone)]
 pub struct SqliteScoutStore {
     conn: Arc<Mutex<Connection>>,
+    user_agent_contact: Option<String>,
 }
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct SourceSnapshot {
@@ -33,6 +35,8 @@ pub struct SourceSnapshot {
     pub origin_daily_limit: u32,
     pub origin_suspended: bool,
     pub outbox_pending: u64,
+    pub cursor: u32,
+    pub last_error: Option<String>,
 }
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct OutboxItem {
@@ -42,6 +46,8 @@ pub struct OutboxItem {
     pub observed_at: DateTime<Utc>,
     pub content_hash: String,
     pub candidates: Vec<GleifCandidate>,
+    #[serde(default)]
+    pub wikidata_candidates: Vec<WikidataCandidate>,
 }
 fn ms(t: DateTime<Utc>) -> i64 {
     t.timestamp_millis()
@@ -127,14 +133,21 @@ fn origin_limits(rows: &[SourceRow], host: &str) -> Result<(u64, u32)> {
     Ok((interval, limit))
 }
 impl SqliteScoutStore {
-    pub fn open(path: impl AsRef<Path>, policies: Vec<SourcePolicy>) -> Result<Self> {
+    pub fn open(
+        path: impl AsRef<Path>,
+        policies: Vec<SourcePolicy>,
+        contact: Option<String>,
+    ) -> Result<Self> {
         let conn = Connection::open(path)?;
-        Self::from_conn(conn, policies)
+        let mut store = Self::from_conn(conn, policies)?;
+        store.user_agent_contact = contact;
+        Ok(store)
     }
     fn from_conn(mut conn: Connection, policies: Vec<SourcePolicy>) -> Result<Self> {
         conn.busy_timeout(std::time::Duration::from_secs(5))?;
         conn.execute_batch("PRAGMA foreign_keys=ON; PRAGMA journal_mode=WAL;
 CREATE TABLE IF NOT EXISTS scout_sources(source_id TEXT PRIMARY KEY,policy TEXT NOT NULL,state TEXT NOT NULL,next_due_ms INTEGER,protected_until_ms INTEGER NOT NULL DEFAULT 0,attempts INTEGER NOT NULL DEFAULT 0,etag TEXT,last_modified TEXT,content_hash TEXT,last_observed_ms INTEGER,last_error TEXT,job_id TEXT,lease_token TEXT,lease_until_ms INTEGER);
+CREATE TABLE IF NOT EXISTS scout_cursors(source_id TEXT PRIMARY KEY, page INTEGER NOT NULL DEFAULT 0);
 CREATE TABLE IF NOT EXISTS scout_origins(origin TEXT PRIMARY KEY,utc_day TEXT NOT NULL,requests INTEGER NOT NULL,next_allowed_ms INTEGER NOT NULL DEFAULT 0,lease_source TEXT,lease_token TEXT,lease_until_ms INTEGER);
 CREATE TABLE IF NOT EXISTS scout_outbox(id TEXT PRIMARY KEY,source_id TEXT NOT NULL REFERENCES scout_sources(source_id),job_id TEXT UNIQUE NOT NULL,observed_at_ms INTEGER NOT NULL,content_hash TEXT NOT NULL,payload TEXT NOT NULL,acked INTEGER NOT NULL DEFAULT 0);
 CREATE INDEX IF NOT EXISTS scout_outbox_pending ON scout_outbox(acked,observed_at_ms);
@@ -144,10 +157,27 @@ CREATE TABLE IF NOT EXISTS scout_events(job_id TEXT PRIMARY KEY,source_id TEXT N
             validate_policy(&p)?;
             let state = if p.enabled { "idle" } else { "disabled" };
             tx.execute("INSERT OR IGNORE INTO scout_sources(source_id,policy,state,next_due_ms) VALUES(?1,?2,?3,?4)",params![p.source_id,serde_json::to_string(&p)?,state,ms(Utc::now())])?;
+            if matches!(
+                p.source_id.as_str(),
+                "gleif-vn-latest-100-v1" | "wikidata-vn-business-v1"
+            ) {
+                let created = tx.execute(
+                    "INSERT OR IGNORE INTO scout_cursors(source_id,page) VALUES(?1,0)",
+                    [&p.source_id],
+                )?;
+                // Existing versions belonged to the old unpaged URL and must not condition the first sweep.
+                if created == 1 {
+                    // An old process may hold a lease for the previous URL: fence it without
+                    // refunding the already consumed origin request or shortening its cooldown.
+                    tx.execute("UPDATE scout_origins SET lease_source=NULL,lease_token=NULL,lease_until_ms=NULL WHERE lease_source=?1 AND lease_token=(SELECT lease_token FROM scout_sources WHERE source_id=?1 AND state='leased')", [&p.source_id])?;
+                    tx.execute("UPDATE scout_sources SET etag=NULL,last_modified=NULL,content_hash=NULL,state=CASE WHEN state='leased' THEN 'idle' ELSE state END,job_id=NULL,lease_token=NULL,lease_until_ms=NULL WHERE source_id=?1", [&p.source_id])?;
+                }
+            }
         }
         tx.commit()?;
         Ok(Self {
             conn: Arc::new(Mutex::new(conn)),
+            user_agent_contact: None,
         })
     }
     fn lock(&self) -> Result<std::sync::MutexGuard<'_, Connection>> {
@@ -236,7 +266,40 @@ CREATE TABLE IF NOT EXISTS scout_events(job_id TEXT PRIMARY KEY,source_id TEXT N
                 )?;
             tx.execute("UPDATE scout_origins SET utc_day=?1,requests=?2,next_allowed_ms=?3,lease_source=?4,lease_token=?5,lease_until_ms=?6 WHERE origin=?7",params![today,count+1,deadline_ms(now).saturating_add(interval as i64*1000),id,token,expires,host])?;
             tx.execute("UPDATE scout_sources SET state='leased',job_id=?1,lease_token=?2,lease_until_ms=?3 WHERE source_id=?4",params![job,token,expires,id])?;
+            let page: u32 = tx
+                .query_row(
+                    "SELECT page FROM scout_cursors WHERE source_id=?1",
+                    [id],
+                    |r| r.get(0),
+                )
+                .optional()?
+                .unwrap_or(0);
+            let request_url = match id.as_str() {
+                "gleif-vn-latest-100-v1" => {
+                    let mut u = Url::parse("https://api.gleif.org/api/v1/lei-records")?;
+                    u.query_pairs_mut()
+                        .append_pair("filter[entity.legalAddress.country]", "VN")
+                        .append_pair("page[size]", "100")
+                        .append_pair("sort", "lei")
+                        .append_pair("page[number]", &(page + 1).to_string());
+                    Some(u.to_string())
+                }
+                "wikidata-vn-business-v1" => {
+                    let query = format!(
+                        "SELECT DISTINCT ?item ?name ?website ?ticker WHERE {{ ?item wdt:P17 wd:Q881; wdt:P31 wd:Q4830453; rdfs:label ?name. FILTER(LANG(?name) = \"vi\") OPTIONAL {{ ?item wdt:P856 ?website }} OPTIONAL {{ ?item wdt:P249 ?ticker }} }} ORDER BY ?item ?name ?website ?ticker LIMIT 100 OFFSET {}",
+                        page * 100
+                    );
+                    let mut u = Url::parse("https://query.wikidata.org/sparql")?;
+                    u.query_pairs_mut()
+                        .append_pair("query", &query)
+                        .append_pair("format", "json");
+                    Some(u.to_string())
+                }
+                _ => None,
+            };
             let lease = Lease {
+                request_url,
+                user_agent_contact: self.user_agent_contact.clone(),
                 job_id: job,
                 fencing_token: token,
                 policy: p.clone(),
@@ -292,13 +355,13 @@ CREATE TABLE IF NOT EXISTS scout_events(job_id TEXT PRIMARY KEY,source_id TEXT N
         tx.commit()?;
         time(due)
     }
-    /// Explicit operator action after reviewing a suspended 429 origin and its source terms.
-    /// Does not reset the daily quota and retains at least the configured minimum interval.
+    /// Review resumes a blocked/exhausted source and/or a rate-limited origin atomically.
+    /// Never resets quota, an existing cooldown, or a source checkpoint.
     pub fn resume_origin_after_review(&self, source_id: &str, now: DateTime<Utc>) -> Result<()> {
         let mut c = self.lock()?;
         let tx = c.transaction_with_behavior(TransactionBehavior::Immediate)?;
         let all = sources(&tx)?;
-        let (_, p, _, _, _, _) = all
+        let (_, p, state, _, protected, _) = all
             .iter()
             .find(|(id, _, _, _, _, _)| id == source_id)
             .context("source not found")?;
@@ -306,11 +369,41 @@ CREATE TABLE IF NOT EXISTS scout_events(job_id TEXT PRIMARY KEY,source_id TEXT N
         validate_policy(p)?;
         let host = origin(p)?;
         let (interval, _) = origin_limits(&all, &host)?;
-        let changed=tx.execute("UPDATE scout_origins SET next_allowed_ms=?1 WHERE origin=?2 AND next_allowed_ms=?3 AND lease_token IS NULL",params![deadline_ms(now).saturating_add(interval as i64*1000),host,i64::MAX])?;
+        let origin_state: Option<(i64, Option<String>)> = tx
+            .query_row(
+                "SELECT next_allowed_ms,lease_token FROM scout_origins WHERE origin=?1",
+                [&host],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .optional()?;
+        let suspended = origin_state
+            .as_ref()
+            .is_some_and(|(until, _)| *until == i64::MAX);
         ensure!(
-            changed == 1,
-            "origin is not suspended or has an active lease"
+            matches!(state.as_str(), "blocked" | "exhausted") || suspended,
+            "source does not need review"
         );
+        ensure!(
+            origin_state
+                .as_ref()
+                .is_none_or(|(_, token)| token.is_none()),
+            "origin has an active lease"
+        );
+        let mut origin_due = deadline_ms(now).saturating_add(interval as i64 * 1000);
+        for (_, policy, _, _, until, _) in &all {
+            if origin(policy)? == host {
+                origin_due = origin_due.max(*until);
+            }
+        }
+        if suspended {
+            tx.execute("UPDATE scout_origins SET next_allowed_ms=?1 WHERE origin=?2 AND next_allowed_ms=?3 AND lease_token IS NULL", params![origin_due,host,i64::MAX])?;
+        } else if let Some((until, _)) = origin_state {
+            origin_due = origin_due.max(until);
+        }
+        if matches!(state.as_str(), "blocked" | "exhausted") {
+            let due = origin_due.max(*protected);
+            tx.execute("UPDATE scout_sources SET state='idle',next_due_ms=?1,protected_until_ms=?1,attempts=0 WHERE source_id=?2", params![due,source_id])?;
+        }
         tx.commit()?;
         Ok(())
     }
@@ -386,7 +479,22 @@ CREATE TABLE IF NOT EXISTS scout_events(job_id TEXT PRIMARY KEY,source_id TEXT N
                 [id],
                 |r| r.get(0),
             )?;
+            let cursor = tx
+                .query_row(
+                    "SELECT page FROM scout_cursors WHERE source_id=?1",
+                    [&id],
+                    |r| r.get(0),
+                )
+                .optional()?
+                .unwrap_or(0);
+            let last_error = tx.query_row(
+                "SELECT last_error FROM scout_sources WHERE source_id=?1",
+                [&id],
+                |r| r.get(0),
+            )?;
             out.push(SourceSnapshot {
+                cursor,
+                last_error,
                 source_id: id.clone(),
                 enabled: p.enabled,
                 state: state.clone(),
@@ -465,6 +573,8 @@ CREATE TABLE IF NOT EXISTS scout_events(job_id TEXT PRIMARY KEY,source_id TEXT N
             "origin lease fenced"
         );
         let mut candidates = None;
+        let mut wikidata_candidates = None;
+        let mut next_page = None;
         if matches!(record.change, Change::FirstSeen | Change::Changed) {
             ensure!(
                 record.status_code == Some(200),
@@ -492,26 +602,67 @@ CREATE TABLE IF NOT EXISTS scout_events(job_id TEXT PRIMARY KEY,source_id TEXT N
                     "content hash mismatch"
                 );
                 let parsed_url = Url::parse(&p.source_url)?;
-                ensure!(
-                    host == "api.gleif.org"
-                        && (parsed_url.path() == "/api/v1/lei-records"
-                            || parsed_url.path().starts_with("/api/v1/lei-records/")),
-                    "no approved content parser for this source"
-                );
-                match parse_gleif_vn_json(bytes) {
-                    Ok(items) => {
-                        let mut unique = HashSet::new();
-                        if items.iter().any(|item| !unique.insert(item.lei.clone())) {
-                            self.fail_parse(&tx, &p, &lease.fencing_token, lease.attempts, now)?;
-                            tx.commit()?;
-                            bail!("duplicate LEI in response")
+                let parsed =
+                    if host == "api.gleif.org" && parsed_url.path() == "/api/v1/lei-records" {
+                        parse_gleif_vn_json(bytes).and_then(|items| {
+                            let mut unique = HashSet::new();
+                            ensure!(
+                                items.iter().all(|item| unique.insert(item.lei.clone())),
+                                "duplicate LEI"
+                            );
+                            let root: serde_json::Value = serde_json::from_slice(bytes)?;
+                            let count = root
+                                .get("data")
+                                .and_then(|v| v.as_array())
+                                .map_or(1, |v| v.len());
+                            if p.source_id == "gleif-vn-latest-100-v1" {
+                                ensure!(count <= 100, "oversized page");
+                            }
+                            candidates = Some(items);
+                            Ok(count)
+                        })
+                    } else if host == "query.wikidata.org"
+                        && parsed_url.path() == "/sparql"
+                        && p.source_id == "wikidata-vn-business-v1"
+                    {
+                        parse_wikidata_vn_json(bytes).and_then(|items| {
+                            let root: serde_json::Value = serde_json::from_slice(bytes)?;
+                            let count = root
+                                .pointer("/results/bindings")
+                                .and_then(|v| v.as_array())
+                                .context("missing results")?
+                                .len();
+                            wikidata_candidates = Some(items);
+                            Ok(count)
+                        })
+                    } else {
+                        bail!("no approved content parser for this source")
+                    };
+                match parsed {
+                    Ok(count) => {
+                        if matches!(
+                            p.source_id.as_str(),
+                            "gleif-vn-latest-100-v1" | "wikidata-vn-business-v1"
+                        ) {
+                            let page: u32 = tx
+                                .query_row(
+                                    "SELECT page FROM scout_cursors WHERE source_id=?1",
+                                    [&p.source_id],
+                                    |r| r.get(0),
+                                )
+                                .optional()?
+                                .unwrap_or(0);
+                            next_page = Some(if count < 100 || page >= 999 {
+                                0
+                            } else {
+                                page + 1
+                            });
                         }
-                        candidates = Some(items);
                     }
                     Err(_) => {
                         self.fail_parse(&tx, &p, &lease.fencing_token, lease.attempts, now)?;
                         tx.commit()?;
-                        bail!("GLEIF parse failed; validators unchanged")
+                        bail!("source parse failed; checkpoint unchanged")
                     }
                 }
             } else {
@@ -539,16 +690,20 @@ CREATE TABLE IF NOT EXISTS scout_events(job_id TEXT PRIMARY KEY,source_id TEXT N
                 "unexpected content for non-success outcome"
             );
         }
-        if let Some(items) = candidates {
+        if candidates.is_some() || wikidata_candidates.is_some() {
             let item = OutboxItem {
                 id: lease.job_id.clone(),
                 source_id: p.source_id.clone(),
                 job_id: lease.job_id.clone(),
                 observed_at: record.observed_at,
                 content_hash: record.content_hash.clone().unwrap_or_default(),
-                candidates: items,
+                candidates: candidates.unwrap_or_default(),
+                wikidata_candidates: wikidata_candidates.unwrap_or_default(),
             };
             tx.execute("INSERT INTO scout_outbox(id,source_id,job_id,observed_at_ms,content_hash,payload) VALUES(?1,?2,?3,?4,?5,?6)",params![item.id,item.source_id,item.job_id,ms(item.observed_at),item.content_hash,serde_json::to_string(&item)?])?;
+        }
+        if let Some(page) = next_page {
+            tx.execute("INSERT INTO scout_cursors(source_id,page) VALUES(?1,?2) ON CONFLICT(source_id) DO UPDATE SET page=excluded.page", params![p.source_id, page])?;
         }
         let origin_next: i64 = tx.query_row(
             "SELECT next_allowed_ms FROM scout_origins WHERE origin=?1",
@@ -557,7 +712,12 @@ CREATE TABLE IF NOT EXISTS scout_events(job_id TEXT PRIMARY KEY,source_id TEXT N
         )?;
         let (state, due, protected, attempts) = match record.change {
             Change::Blocked => ("blocked", None, 0, record.attempts),
-            Change::Exhausted => ("exhausted", None, 0, record.attempts),
+            Change::Exhausted => (
+                "exhausted",
+                None,
+                record.next_due.map(deadline_ms).unwrap_or(0),
+                record.attempts,
+            ),
             Change::Retry => {
                 let due =
                     deadline_ms(record.next_due.context("missing retry time")?).max(origin_next);
@@ -578,6 +738,9 @@ CREATE TABLE IF NOT EXISTS scout_events(job_id TEXT PRIMARY KEY,source_id TEXT N
             Change::FirstSeen | Change::Changed | Change::Unchanged
         );
         tx.execute("UPDATE scout_sources SET state=?1,next_due_ms=?2,protected_until_ms=?3,attempts=?4,etag=CASE WHEN ?5 THEN ?6 ELSE etag END,last_modified=CASE WHEN ?5 THEN ?7 ELSE last_modified END,content_hash=CASE WHEN ?5 THEN ?8 ELSE content_hash END,last_observed_ms=?9,last_error=?10,job_id=NULL,lease_token=NULL,lease_until_ms=NULL WHERE source_id=?11",params![state,due,protected,attempts,success,record.etag,record.last_modified,record.content_hash,ms(record.observed_at),if success{None}else{Some(record.reason.as_str())},p.source_id])?;
+        if next_page.is_some() {
+            tx.execute("UPDATE scout_sources SET etag=NULL,last_modified=NULL,content_hash=NULL WHERE source_id=?1", [&p.source_id])?;
+        }
         // A 429 applies to the whole origin, not just this source. If the retry deadline is
         // unavailable or the retry budget is exhausted, suspend the origin until reviewed.
         if record.status_code == Some(429) {
@@ -670,6 +833,100 @@ mod tests {
             attempts: l.attempts + 1,
             reason: "success".into(),
         }
+    }
+    #[test]
+    fn paginated_commit_advances_cursor_atomically_and_resets_after_last_page() -> Result<()> {
+        let s = memory(vec![policy("gleif-vn-latest-100-v1")]);
+        let now = Utc::now() + Duration::seconds(1);
+        let lease = s.claim_at(now)?.unwrap();
+        assert!(
+            lease
+                .request_url
+                .as_deref()
+                .unwrap()
+                .contains("page%5Bnumber%5D=1")
+        );
+        let data: Vec<serde_json::Value> = (0..100).map(|n| serde_json::json!({"id": format!("{n:020}"), "attributes":{"entity":{"legalName":{"name":"Synthetic"},"legalAddress":{"country":"VN"}},"registration":{}}})).collect();
+        let bytes = serde_json::to_vec(&serde_json::json!({"data": data}))?;
+        let rec = outcome(&lease, now, &bytes);
+        s.commit_at(&lease, &rec, Some(&bytes), now)?;
+        s.commit_at(&lease, &rec, Some(&bytes), now)?;
+        assert_eq!(s.pending_outbox(10)?.len(), 1);
+        assert_eq!(s.snapshot_at(now)?[0].cursor, 1);
+        let later = now + Duration::seconds(301);
+        let next = s.claim_at(later)?.unwrap();
+        assert!(
+            next.request_url
+                .as_deref()
+                .unwrap()
+                .contains("page%5Bnumber%5D=2")
+        );
+        assert!(next.previous_hash.is_none());
+        let bad = b"bad";
+        assert!(
+            s.commit_at(&next, &outcome(&next, later, bad), Some(bad), later)
+                .is_err()
+        );
+        assert_eq!(s.snapshot_at(later)?[0].cursor, 1);
+        let retry_at = later + Duration::seconds(301);
+        let retry = s.claim_at(retry_at)?.unwrap();
+        let last = payload();
+        s.commit_at(
+            &retry,
+            &outcome(&retry, retry_at, &last),
+            Some(&last),
+            retry_at,
+        )?;
+        assert_eq!(s.snapshot_at(retry_at)?[0].cursor, 0);
+        assert_eq!(s.pending_outbox(10)?.len(), 2);
+        Ok(())
+    }
+    #[test]
+    fn wikidata_page_produces_separate_outbox_and_checkpoint() -> Result<()> {
+        let p = SourcePolicy {
+            source_id: "wikidata-vn-business-v1".into(),
+            source_url: "https://query.wikidata.org/sparql".into(),
+            enabled: true,
+            access_authorized: true,
+            robots_and_terms_checked: true,
+            allowed_hosts: vec!["query.wikidata.org".into()],
+            min_interval_seconds: 300,
+            max_requests_per_day: 10,
+            process_content_authorized: true,
+            ..SourcePolicy::default()
+        };
+        let s = memory(vec![p]);
+        let now = Utc::now() + Duration::seconds(1);
+        let lease = s.claim_at(now)?.unwrap();
+        assert!(
+            lease
+                .request_url
+                .as_ref()
+                .unwrap()
+                .starts_with("https://query.wikidata.org/sparql?")
+        );
+        let data = br#"{"results":{"bindings":[{"item":{"value":"http://www.wikidata.org/entity/Q123"},"name":{"value":"Synthetic"}}]}}"#;
+        s.commit_at(&lease, &outcome(&lease, now, data), Some(data), now)?;
+        let pending = s.pending_outbox(10)?;
+        assert!(pending[0].candidates.is_empty());
+        assert_eq!(pending[0].wikidata_candidates[0].qid, "Q123");
+        assert_eq!(s.snapshot_at(now)?[0].cursor, 0);
+        Ok(())
+    }
+    #[test]
+    fn unsupported_source_never_processes_content() -> Result<()> {
+        let mut p = policy("unknown");
+        p.source_url = "https://api.gleif.org/unsupported".into();
+        let s = memory(vec![p]);
+        let now = Utc::now() + Duration::seconds(1);
+        let lease = s.claim_at(now)?.unwrap();
+        let bytes = payload();
+        assert!(
+            s.commit_at(&lease, &outcome(&lease, now, &bytes), Some(&bytes), now)
+                .is_err()
+        );
+        assert!(s.pending_outbox(10)?.is_empty());
+        Ok(())
     }
     #[test]
     fn outbox_and_validators_commit_atomically_and_are_idempotent() -> Result<()> {
@@ -826,6 +1083,65 @@ mod tests {
         Ok(())
     }
     #[test]
+    fn review_recovers_forbidden_source_without_resetting_quota_or_checkpoint() -> Result<()> {
+        let mut p = policy("gleif-vn-latest-100-v1");
+        p.max_requests_per_day = 1;
+        let s = memory(vec![p]);
+        let now = time(ms(Utc::now() + Duration::seconds(1)))?;
+        let lease = s.claim_at(now)?.unwrap();
+        let mut record = outcome(&lease, now, &payload());
+        record.change = Change::Blocked;
+        record.status_code = Some(403);
+        record.reason = "access_denied_reapproval_required".into();
+        record.content_hash = None;
+        record.next_due = None;
+        s.commit_at(&lease, &record, None, now)?;
+        assert_eq!(s.snapshot_at(now)?[0].state, "blocked");
+        s.resume_origin_after_review(&lease.policy.source_id, now + Duration::seconds(10))?;
+        let snap = s.snapshot_at(now + Duration::seconds(10))?.remove(0);
+        assert_eq!(snap.state, "idle");
+        assert_eq!(snap.cursor, 0);
+        assert_eq!(snap.origin_requests_today, 1);
+        assert!(snap.next_due.unwrap() >= time(next_day_ms(now)?)?);
+        assert!(s.claim_at(now + Duration::seconds(311))?.is_none());
+        Ok(())
+    }
+    #[test]
+    fn exhausted_rate_limit_preserves_retry_after_across_origin_review() -> Result<()> {
+        let s = memory(vec![policy("s1"), policy("s2")]);
+        let now = time(ms(Utc::now() + Duration::seconds(1)))?;
+        let lease = s.claim_at(now)?.unwrap();
+        let other = if lease.policy.source_id == "s1" {
+            "s2"
+        } else {
+            "s1"
+        };
+        let mut rec = outcome(&lease, now, &payload());
+        rec.change = Change::Exhausted;
+        rec.status_code = Some(429);
+        rec.content_hash = None;
+        rec.next_due = Some(now + Duration::seconds(7200));
+        s.commit_at(&lease, &rec, None, now)?;
+        s.resume_origin_after_review(other, now + Duration::seconds(1))?;
+        let snap = s.snapshot_at(now + Duration::seconds(2))?;
+        assert!(
+            snap.iter()
+                .find(|x| x.source_id == other)
+                .unwrap()
+                .next_due
+                .unwrap()
+                >= now + Duration::seconds(7200)
+        );
+        s.resume_origin_after_review(&lease.policy.source_id, now + Duration::seconds(3))?;
+        assert!(
+            s.snapshot_at(now + Duration::seconds(4))?
+                .iter()
+                .all(|x| x.next_due.unwrap() >= now + Duration::seconds(7200))
+        );
+        assert!(s.claim_at(now + Duration::seconds(7199))?.is_none());
+        Ok(())
+    }
+    #[test]
     fn concurrent_workers_get_only_one_origin_lease() -> Result<()> {
         let s = memory(vec![policy("s1"), policy("s2")]);
         let now = Utc::now() + Duration::seconds(1);
@@ -847,15 +1163,42 @@ mod tests {
         Ok(())
     }
     #[test]
+    fn pagination_migration_fences_old_leases_without_refunding_quota() -> Result<()> {
+        let path = std::env::temp_dir().join(format!("scout-migrate-{}.db", Uuid::new_v4()));
+        let id = "gleif-vn-latest-100-v1";
+        let now = Utc::now() + Duration::seconds(1);
+        let first = SqliteScoutStore::open(&path, vec![policy(id)], None)?;
+        let lease = first.claim_at(now)?.unwrap();
+        {
+            let c = first.lock()?;
+            c.execute("DELETE FROM scout_cursors WHERE source_id=?1", [id])?;
+        }
+        let migrated = SqliteScoutStore::open(&path, vec![policy(id)], None)?;
+        let bytes = payload();
+        assert!(
+            first
+                .commit_at(&lease, &outcome(&lease, now, &bytes), Some(&bytes), now)
+                .is_err()
+        );
+        let snapshot = migrated.snapshot_at(now)?.remove(0);
+        assert_eq!(snapshot.state, "idle");
+        assert_eq!(snapshot.origin_requests_today, 1);
+        assert!(migrated.claim_at(now + Duration::seconds(1))?.is_none());
+        drop(first);
+        drop(migrated);
+        std::fs::remove_file(path)?;
+        Ok(())
+    }
+    #[test]
     fn expiry_and_restart_preserve_state_and_quota() -> Result<()> {
         let path = std::env::temp_dir().join(format!("scout-store-{}.db", Uuid::new_v4()));
         let now = Utc::now() + Duration::seconds(1);
         let lease = {
-            let s = SqliteScoutStore::open(&path, vec![policy("s")])?;
+            let s = SqliteScoutStore::open(&path, vec![policy("s")], None)?;
             s.claim_at(now)?.unwrap()
         };
         {
-            let s = SqliteScoutStore::open(&path, vec![policy("s")])?;
+            let s = SqliteScoutStore::open(&path, vec![policy("s")], None)?;
             assert!(s.claim_at(now + Duration::seconds(60))?.is_none());
             let stale = outcome(&lease, now, &payload());
             assert!(

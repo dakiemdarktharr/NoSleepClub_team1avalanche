@@ -2,6 +2,8 @@
 
 **Tổng hợp ngày 02/11/2026.** Tài liệu này kết nối yêu cầu sản phẩm, mã hiện có và các nghiên cứu đã thực hiện. Đây là kế hoạch; không có nghĩa những hạng mục đề xuất đã được triển khai hoặc nghiệm thu.
 
+**Cập nhật triển khai:** đã có hai nguồn Scout miễn phí và quét phân trang, vòng cải thiện truy vấn có áp dụng/khôi phục, và pipeline sàng lọc theo bằng chứng do người dùng rà soát. Xem [bản triển khai](IMPLEMENTATION_2026-11-02.md) để phân biệt với các mục kế hoạch bên dưới. Tiếp theo cần dữ liệu outcome/nhãn độc lập, kiểm định model đối chứng khi có ngân sách, và test AVAX để triển khai Fuji. Không tự mua feed hoặc nâng ngân sách.
+
 ## Mục tiêu và quyết định đã thống nhất
 
 - **MIRA** là trợ lý tiếng Việt để trò chuyện và giao việc. **LANTERN VN** là terminal điều tra doanh nghiệp, có bằng chứng và so sánh; **Scout** là worker theo dõi nguồn; **Evolution Lab** là vòng thử nghiệm cải thiện agent.

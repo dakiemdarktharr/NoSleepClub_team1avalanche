@@ -601,6 +601,7 @@ mod tests {
             .join(Uuid::new_v4().to_string());
         let store = Store::memory().unwrap();
         let app = App {
+            evolution: crate::evolution::EvolutionStore::open(":memory:").unwrap(),
             store: store.clone(),
             connector: None,
             provider: json!({}),

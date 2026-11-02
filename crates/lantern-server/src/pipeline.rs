@@ -184,7 +184,29 @@ async fn process(app: &App, job: &Investigation) -> Result<()> {
     } else {
         job.query.clone()
     };
+    let learning = app.evolution.snapshot()?;
+    let provider_query = learning.active.recipe.apply(&provider_query);
+    let record_outcome = |outcome| {
+        if app
+            .evolution
+            .record_run_for(
+                &job.id,
+                outcome,
+                learning.active.id,
+                learning.shadow.as_ref().map(|v| v.id),
+            )
+            .is_err()
+        {
+            tracing::warn!("Could not record bounded retrieval outcome");
+        }
+        if app.evolution.tick().is_err() {
+            tracing::warn!("Could not evaluate retrieval candidate");
+        }
+    };
     let response = client.research(&provider_query, job.as_of.as_deref()).await;
+    if response.is_err() {
+        record_outcome(evolution::Outcome::SourceFailure);
+    }
     let reply = response
         .context("Nguồn AI chưa trả kết quả; khoản đặt giữ vẫn được tính. Không tự retry.")?;
     save_usage(
@@ -201,13 +223,15 @@ async fn process(app: &App, job: &Investigation) -> Result<()> {
         return Ok(());
     }
     if reply.status != "completed" || reply.refusal.is_some() {
+        record_outcome(evolution::Outcome::SourceFailure);
         app.store.transition_with_result(&job.id,"partial","provider_incomplete",
             "Model chưa hoàn thành hoặc từ chối; không nhập dữ liệu dang dở.",
             Some(reply.refusal.as_deref().unwrap_or("Model hết giới hạn trước khi hoàn tất. Giữ nguyên cấu hình; chưa có báo cáo được xác minh.")),
             Some(vec![format!("Trạng thái provider: {}. Khoản đặt giữ vẫn được tính.",reply.status)]))?;
         return Ok(());
     }
-    let value = parse_json(&reply.text)?;
+    let value = parse_json(&reply.text)
+        .inspect_err(|_| record_outcome(evolution::Outcome::SourceFailure))?;
     let allowed: HashSet<String> = reply
         .citations
         .iter()
@@ -352,6 +376,11 @@ async fn process(app: &App, job: &Investigation) -> Result<()> {
         &limitations,
         status,
     )?;
+    record_outcome(if saved.is_empty() && evidence_count == 0 {
+        evolution::Outcome::NoEvidence
+    } else {
+        evolution::Outcome::Success
+    });
     add_message(
         app,
         "assistant",

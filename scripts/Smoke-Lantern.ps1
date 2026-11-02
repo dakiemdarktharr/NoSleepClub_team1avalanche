@@ -87,7 +87,7 @@ try {
         (Get-Header $page 'Permissions-Policy') -match 'microphone=\(self\)') 'Permissions-Policy limits camera and microphone'
     Assert-Condition ((Get-Header $page 'Cache-Control') -match 'no-store') 'Application shell is not cached'
 
-    foreach ($view in @('overview','companies','dossier','compare','watchlist','jobs','sources','settings')) {
+    foreach ($view in @('overview','companies','dossier','compare','watchlist','jobs','sources','settings','risk','evolution')) {
         $fragment = Send-Check "/ui?view=$view"
         Assert-Condition ($fragment.Status -eq 200 -and $fragment.Content.Contains('id="main-content"')) "GET /ui for $view renders a workspace"
     }

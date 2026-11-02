@@ -1,4 +1,6 @@
 //! Durable domain storage for LANTERN. No external data is assumed to be complete.
+mod catalog;
+pub mod risk;
 use anyhow::{Context, Result, bail, ensure};
 use chrono::{DateTime, FixedOffset, NaiveDate, TimeZone, Utc};
 use rusqlite::{Connection, OptionalExtension, TransactionBehavior, params};
@@ -290,6 +292,18 @@ PRAGMA user_version=2; COMMIT;")?;
                 name: "Thi hành án dân sự".into(),
                 url: "https://thads.moj.gov.vn/".into(),
                 description: "Nguồn thông tin thi hành án, phạm vi công bố có giới hạn.".into(),
+            },
+            Source {
+                id: "gleif".into(),
+                name: "GLEIF LEI Việt Nam".into(),
+                url: "https://www.gleif.org/en/lei-data/gleif-api/".into(),
+                description: "Scout phân trang LEI có địa chỉ pháp lý Việt Nam; CC0, không xác nhận MST.".into(),
+            },
+            Source {
+                id: "wikidata".into(),
+                name: "Wikidata Việt Nam".into(),
+                url: "https://www.wikidata.org/wiki/Wikidata:Licensing".into(),
+                description: "Mục doanh nghiệp, website và ticker cộng đồng CC0; chưa xác minh, bật nguồn riêng.".into(),
             },
         ];
         let conn = lock(&self.conn)?;

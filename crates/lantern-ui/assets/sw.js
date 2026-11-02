@@ -1,5 +1,5 @@
 /* Cache static assets only. Never cache navigation, private state, or API data. */
-const CACHE = 'lantern-static-v6';
+const CACHE = 'lantern-static-v8';
 const STATIC = ['/assets/app.css','/assets/app.js','/assets/icon.svg','/manifest.webmanifest'];
 self.addEventListener('install', event => { event.waitUntil(caches.open(CACHE).then(cache => cache.addAll(STATIC)).then(() => self.skipWaiting())); });
 self.addEventListener('activate', event => { event.waitUntil(caches.keys().then(keys => Promise.all(keys.filter(key => key.startsWith('lantern-static-') && key !== CACHE).map(key => caches.delete(key)))).then(() => self.clients.claim())); });
